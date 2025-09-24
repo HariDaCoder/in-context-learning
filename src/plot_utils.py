@@ -102,7 +102,7 @@ def collect_results(run_dir, df, valid_row=None, rename_eval=None, rename_model=
                     normalization = 1
 
                 for k, v in m.items():
-                    v = v[:xlim]
+                    # v = v[:xlim]
                     v = [vv / normalization for vv in v]
                     m_processed[k] = v
                 processed_results[model_name] = m_processed

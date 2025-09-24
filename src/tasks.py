@@ -74,13 +74,16 @@ def get_task_sampler(
 
 
 class LinearRegression(Task):
-    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1,uniform=False):
         """scale: a constant by which to scale the randomly sampled weights."""
         super(LinearRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
         self.scale = scale
 
         if pool_dict is None and seeds is None:
-            self.w_b = torch.randn(self.b_size, self.n_dims, 1)
+            if uniform:
+                self.w_b = torch.rand(self.b_size, self.n_dims, 1)*2 -1
+            else:
+                self.w_b = torch.randn(self.b_size, self.n_dims, 1)
         elif seeds is not None:
             self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
             generator = torch.Generator()
@@ -178,12 +181,13 @@ class NoisyLinearRegression(LinearRegression):
         pool_dict=None,
         seeds=None,
         scale=1,
-        noise_std=0,
+        noise_std=0.01,
         renormalize_ys=False,
+        uniform=False,
     ):
         """noise_std: standard deviation of noise added to the prediction."""
         super(NoisyLinearRegression, self).__init__(
-            n_dims, batch_size, pool_dict, seeds, scale
+            n_dims, batch_size, pool_dict, seeds, scale, uniform
         )
         self.noise_std = noise_std
         self.renormalize_ys = renormalize_ys

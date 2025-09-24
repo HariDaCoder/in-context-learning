@@ -71,6 +71,11 @@ def get_relevant_baselines(task_name):
             (XGBoostModel, {}),
             (AveragingModel, {}),
         ],
+        "noisy_linear_regression": [
+            (LeastSquaresModel, {}),
+            (NNModel, {"n_neighbors": 3}),
+            (AveragingModel, {}),
+        ],
     }
 
     models = [model_cls(**kwargs) for model_cls, kwargs in task_to_baselines[task_name]]
