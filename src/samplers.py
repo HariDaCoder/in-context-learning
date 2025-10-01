@@ -61,7 +61,7 @@ class GaussianSampler(DataSampler):
     
     
 class AR1Sampler(DataSampler):
-    def __init__(self, n_dims, bias=None, scale=0.9, sigma=0.0, init_state=None):
+    def __init__(self, n_dims, bias=None, scale=0.9, sigma=0.5, init_state=None):
         super().__init__(n_dims)
         # phi là số thực, có thể lấy trace nếu scale là ma trận
         if torch.is_tensor(scale) and scale.ndim == 2:
@@ -73,7 +73,7 @@ class AR1Sampler(DataSampler):
 
         self.sigma = sigma
         self.bias = bias
-        self.init_state = init_state if init_state is not None else torch.zeros(n_dims)
+        self.init_state = init_state if init_state is not None else torch.ones(n_dims)
 
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         xs_b = torch.zeros(b_size, n_points, self.n_dims)
@@ -95,7 +95,7 @@ class AR1Sampler(DataSampler):
         return xs_b
 
 class VAR1Sampler(DataSampler):
-    def __init__(self, n_dims, bias=None, scale=None, sigma=0.0, init_state=None):
+    def __init__(self, n_dims, bias=None, scale=None, sigma=0.5, init_state=None):
         super().__init__(n_dims)
         if scale is None:
             self.phi = 0.9 * torch.eye(n_dims)
@@ -105,7 +105,7 @@ class VAR1Sampler(DataSampler):
 
         self.bias = bias
         self.sigma = sigma
-        self.init_state = init_state if init_state is not None else torch.zeros(n_dims)
+        self.init_state = init_state if init_state is not None else torch.ones(n_dims)
 
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         xs_b = torch.zeros(b_size, n_points, self.n_dims)
