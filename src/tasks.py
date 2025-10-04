@@ -346,3 +346,71 @@ class DecisionTree(Task):
     @staticmethod
     def get_training_metric():
         return mean_squared_error
+class AR1LinearRegression(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, ar_coef=0.5, noise_std=1.0):
+        """
+        AR(1) Linear Regression: y_t = x_t^T w + epsilon_t
+        where epsilon_t = ar_coef * epsilon_{t-1} + u_t, u_t ~ N(0, noise_std^2)
+        
+        scale: a constant by which to scale the randomly sampled weights
+        ar_coef: AR(1) coefficient for error terms
+        noise_std: standard deviation of innovation noise
+        """
+        super(AR1LinearRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        self.ar_coef = ar_coef
+        self.noise_std = noise_std
+
+        if pool_dict is None and seeds is None:
+            self.w_b = torch.randn(self.b_size, self.n_dims, 1)
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            assert len(seeds) == self.b_size
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                self.w_b[i] = torch.randn(self.n_dims, 1, generator=generator)
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+
+    def evaluate(self, xs_b):
+        """
+        Generate AR(1) linear regression data with correlated errors
+        """
+        w_b = self.w_b.to(xs_b.device)
+        batch_size, n_points, n_dims = xs_b.shape
+        
+        # Generate linear predictions
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0]
+        
+        # Generate AR(1) error terms
+        ys_ar1 = torch.zeros_like(ys_linear)
+        for b in range(batch_size):
+            # Generate AR(1) process for errors
+            errors = torch.zeros(n_points, device=xs_b.device)
+            for t in range(n_points):
+                if t == 0:
+                    # Initial error
+                    errors[t] = torch.randn(1, device=xs_b.device) * self.noise_std
+                else:
+                    # AR(1) error: epsilon_t = ar_coef * epsilon_{t-1} + u_t
+                    errors[t] = self.ar_coef * errors[t-1] + torch.randn(1, device=xs_b.device) * self.noise_std
+            
+            # Add AR(1) errors to linear predictions
+            ys_ar1[b] = ys_linear[b] + errors
+        
+        return ys_ar1
+
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, **kwargs):
+        return {"w": torch.randn(num_tasks, n_dims, 1)}
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
