@@ -748,11 +748,3 @@ class GLSModel:
         indices = torch.arange(n, dtype=torch.float32)
         diff = torch.abs(indices.unsqueeze(0) - indices.unsqueeze(1))
         return torch.pow(ar_coef, diff)
-    
-# class AR2Model:
-#     def __init__(self):
-#         self.ar1_coef = None
-#         self.ar2_coef = None
-#         self.name = "AR(2)"
-
-#     def fit(self, x_train, y_train):

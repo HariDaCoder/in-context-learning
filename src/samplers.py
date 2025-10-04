@@ -218,9 +218,6 @@ class AR1Sampler(DataSampler):
             xs_b[:, :, n_dims_truncated:] = 0
 
         return xs_b
-
-# if __name__ == "__main__":
-#     test_var1_sampler()
 class AR2Sampler(DataSampler):
     def __init__(self, n_dims, ar1_coef=0.5, ar2_coef=0.3, noise_std=1.0, bias=None, scale=None):
         super().__init__(n_dims)
@@ -233,19 +230,26 @@ class AR2Sampler(DataSampler):
         self.scale = scale
 
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        # Shape: (batch, time, dims)
         xs_b = torch.zeros(b_size, n_points, self.n_dims)
 
-        generators =None
+        generators = None
         if seeds is not None:
-            generators = [torch.Generator().manual_seed(int(seed)) for seed in seeds]
+            assert len(seeds) == b_size
+            generators = []
+            for seed in seeds:
+                g = torch.Generator()
+                g.manual_seed(int(seed))
+                generators.append(g)
 
+        # Initialize first two time steps
         for t in range(2):
             if generators is None:
                 xs_b[:, t, :] = torch.randn(b_size, self.n_dims)
             else:
                 for i in range(b_size):
                     xs_b[i, t, :] = torch.randn(self.n_dims, generator=generators[i])
-        
+
         # AR(2): x_t = ar1_coef * x_{t-1} + ar2_coef * x_{t-2} + eps_t
         for t in range(2, n_points):
             if generators is None:
@@ -254,9 +258,11 @@ class AR2Sampler(DataSampler):
                 eps_t = torch.zeros(b_size, self.n_dims)
                 for i in range(b_size):
                     eps_t[i] = self.noise_std * torch.randn(self.n_dims, generator=generators[i])
-            xs_b[:, t, :] = (self.ar1_coef * xs_b[:, t - 1, :] + 
-                             self.ar2_coef * xs_b[:, t - 2, :] + eps_t)
-            
+            xs_b[:, t, :] = (
+                self.ar1_coef * xs_b[:, t - 1, :] +
+                self.ar2_coef * xs_b[:, t - 2, :] +
+                eps_t
+            )
         if self.scale is not None:
             xs_b = xs_b @ self.scale
         if self.bias is not None:
@@ -264,6 +270,7 @@ class AR2Sampler(DataSampler):
 
         if n_dims_truncated is not None:
             xs_b[:, :, n_dims_truncated:] = 0
+
         return xs_b
 class VR2Sampler(DataSampler):
     def __init__(self, n_dims, ar1_mat=None, ar2_mat=None, noise_std=1.0, bias=None, scale=None):
@@ -322,3 +329,4 @@ class VR2Sampler(DataSampler):
             xs_b[:, :, n_dims_truncated:] = 0
             
         return xs_b
+ 
