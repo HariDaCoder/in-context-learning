@@ -672,28 +672,57 @@ class FeasibleGLSModel:
         return torch.stack(preds, dim=1)
 
     def _estimate_ar_coef(self, residuals):
-        """Estimate AR(1) coefficient using Yule-Walker equations"""
-        if len(residuals) <= 1:
-            return 0.0
-        
-        # Compute autocovariances
-        n = len(residuals)
-        gamma_0 = torch.var(residuals)
-        if n > 1:
-            gamma_1 = torch.mean(residuals[:-1] * residuals[1:])
-            ar_coef = gamma_1 / gamma_0 if gamma_0 > 1e-10 else 0.0
-            # Ensure stability
-            ar_coef = torch.clamp(ar_coef, -0.99, 0.99)
-        else:
-            ar_coef = 0.0
-        
-        return ar_coef
+        """Estimate AR(1) coefficient using Yule-Walker equations (returns a torch.Tensor scalar)."""
+        # Ensure residuals is a torch tensor
+        if not isinstance(residuals, torch.Tensor):
+            residuals = torch.tensor(residuals, dtype=torch.float32)
 
-    def _create_ar1_covariance(self, n, ar_coef):
-        """Create AR(1) covariance matrix"""
-        indices = torch.arange(n, dtype=torch.float32)
-        diff = torch.abs(indices.unsqueeze(0) - indices.unsqueeze(1))
-        return torch.pow(ar_coef, diff)
+        if residuals.numel() <= 1:
+            # return tensor scalar on same device
+            return torch.tensor(0.0, dtype=torch.float32, device=residuals.device)
+
+        # Use unbiased-ish estimators:
+        n = residuals.shape[0]
+        # gamma_0: variance (use unbiased? here regular torch.var with unbiased=False to match mean-of-squares)
+        gamma_0 = torch.var(residuals, unbiased=False)
+        gamma_1 = torch.mean(residuals[:-1] * residuals[1:])
+
+        # avoid division by (near) zero
+        if gamma_0.item() <= 1e-10:
+            ar_coef = torch.tensor(0.0, dtype=torch.float32, device=residuals.device)
+        else:
+            ar_coef = gamma_1 / gamma_0
+            # ensure tensor type & correct device
+            if not isinstance(ar_coef, torch.Tensor):
+                ar_coef = torch.tensor(ar_coef, dtype=torch.float32, device=residuals.device)
+            else:
+                ar_coef = ar_coef.to(dtype=torch.float32, device=residuals.device)
+
+            # clamp safely as tensor
+            ar_coef = torch.clamp(ar_coef, -0.99, 0.99)
+
+        return ar_coef  # tensor scalar
+
+    def _create_ar1_covariance(self, n, ar_coef, device=None, dtype=torch.float32):
+        """Create AR(1) covariance matrix V[i,j] = ar_coef**|i-j|.
+        ar_coef may be float or torch scalar; this returns a torch.Tensor (n x n).
+        """
+        if device is None:
+            # default CPU
+            device = torch.device("cpu")
+
+        # make ar_coef a tensor scalar on correct device
+        if not isinstance(ar_coef, torch.Tensor):
+            ar_coef_t = torch.tensor(ar_coef, dtype=dtype, device=device)
+        else:
+            ar_coef_t = ar_coef.to(device=device, dtype=dtype)
+
+        indices = torch.arange(n, dtype=dtype, device=device)
+        diff = torch.abs(indices.unsqueeze(0) - indices.unsqueeze(1)).to(dtype=dtype)
+
+        # use torch.pow with tensor base and tensor exponent
+        # (ensure ar_coef_t is broadcastable)
+        return torch.pow(ar_coef_t, diff)
 
 
 class GLSModel:

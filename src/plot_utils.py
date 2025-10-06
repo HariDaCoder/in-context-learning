@@ -37,6 +37,12 @@ relevant_model_names = {
         "3-Nearest Neighbors",
         "2-layer NN, GD",
     ],
+    "ar1_linear_regression": [
+        "Transformer",
+        "Least Squares",
+        "3-Nearest Neighbors",
+        "2-layer NN, GD",
+    ],
 }
 
 

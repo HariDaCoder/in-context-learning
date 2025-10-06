@@ -41,6 +41,7 @@ TASK_LIST = [
     "relu_2nn_regression",
     "decision_tree",
     "noisy_linear_regression",
+    "ar1_linear_regression"
 ]
 
 training_schema = {
