@@ -15,7 +15,9 @@ def get_data_sampler(data_name, n_dims, **kwargs):
     names_to_classes = {
         "gaussian": GaussianSampler,
         "ar1":AR1Sampler,
-        "var1":VAR1Sampler,
+        # "var1":VAR1Sampler,
+        "ar2":AR2Sampler,
+        "vr2":VR2Sampler,
     }
     if data_name in names_to_classes:
         sampler_cls = names_to_classes[data_name]
@@ -219,3 +221,104 @@ class AR1Sampler(DataSampler):
 
 # if __name__ == "__main__":
 #     test_var1_sampler()
+class AR2Sampler(DataSampler):
+    def __init__(self, n_dims, ar1_coef=0.5, ar2_coef=0.3, noise_std=1.0, bias=None, scale=None):
+        super().__init__(n_dims)
+        assert abs(ar2_coef) < 1, "|ar2_coef| must be < 1 for a stable AR(2)"
+        
+        self.ar1_coef = float(ar1_coef)
+        self.ar2_coef = float(ar2_coef)
+        self.noise_std = float(noise_std)
+        self.bias = bias
+        self.scale = scale
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        xs_b = torch.zeros(b_size, n_points, self.n_dims)
+
+        generators =None
+        if seeds is not None:
+            generators = [torch.Generator().manual_seed(int(seed)) for seed in seeds]
+
+        for t in range(2):
+            if generators is None:
+                xs_b[:, t, :] = torch.randn(b_size, self.n_dims)
+            else:
+                for i in range(b_size):
+                    xs_b[i, t, :] = torch.randn(self.n_dims, generator=generators[i])
+        
+        # AR(2): x_t = ar1_coef * x_{t-1} + ar2_coef * x_{t-2} + eps_t
+        for t in range(2, n_points):
+            if generators is None:
+                eps_t = self.noise_std * torch.randn(b_size, self.n_dims)
+            else:
+                eps_t = torch.zeros(b_size, self.n_dims)
+                for i in range(b_size):
+                    eps_t[i] = self.noise_std * torch.randn(self.n_dims, generator=generators[i])
+            xs_b[:, t, :] = (self.ar1_coef * xs_b[:, t - 1, :] + 
+                             self.ar2_coef * xs_b[:, t - 2, :] + eps_t)
+            
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+class VR2Sampler(DataSampler):
+    def __init__(self, n_dims, ar1_mat=None, ar2_mat=None, noise_std=1.0, bias=None, scale=None):
+        super().__init__(n_dims)
+        
+        if ar1_mat is None:
+            ar1_mat = 0.5 * torch.eye(n_dims)
+        if ar2_mat is None:
+            ar2_mat = 0.3 * torch.eye(n_dims)
+            
+        # Check 
+        assert ar1_mat.shape == (n_dims, n_dims), "ar1_mat must be n_dims x n_dims"
+        assert ar2_mat.shape == (n_dims, n_dims), "ar2_mat must be n_dims x n_dims"
+        
+        self.ar1_mat = torch.tensor(ar1_mat, dtype=torch.float32)
+        self.ar2_mat = torch.tensor(ar2_mat, dtype=torch.float32)
+        self.noise_std = float(noise_std)
+        self.bias = bias
+        self.scale = scale
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        xs_b = torch.zeros(b_size, n_points, self.n_dims)
+
+        generators = None
+        if seeds is not None:
+            generators = [torch.Generator().manual_seed(int(seed)) for seed in seeds]
+
+        # Initialize first two time points
+        for t in range(2):
+            if generators is None:
+                xs_b[:, t, :] = torch.randn(b_size, self.n_dims)
+            else:
+                for i in range(b_size):
+                    xs_b[i, t, :] = torch.randn(self.n_dims, generator=generators[i])
+        
+        # VR(2): x_t = A1 * x_{t-1} + A2 * x_{t-2} + eps_t
+        for t in range(2, n_points):
+            if generators is None:
+                eps_t = self.noise_std * torch.randn(b_size, self.n_dims)
+            else:
+                eps_t = torch.zeros(b_size, self.n_dims)
+                for i in range(b_size):
+                    eps_t[i] = self.noise_std * torch.randn(self.n_dims, generator=generators[i])
+                    
+            # Matrix multiplication for each sample in batch
+            xs_b[:, t, :] = (torch.matmul(xs_b[:, t-1, :], self.ar1_mat.T) + 
+                            torch.matmul(xs_b[:, t-2, :], self.ar2_mat.T) + 
+                            eps_t)
+            
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+            
+        return xs_b

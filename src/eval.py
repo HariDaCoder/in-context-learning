@@ -185,9 +185,13 @@ def eval_model(
         all_metrics.append(metrics)
 
     metrics = torch.cat(all_metrics, dim=0)
-
-    return aggregate_metrics(metrics)
-
+    results = aggregate_metrics(metrics)
+    
+    if prompting_strategy == "standard":
+        grad_alignments = compute_gradient_alignment(model, task_sampler(), xs[0])
+        results["gradient_alignment"] = grad_alignments
+    
+    return results
 
 def build_evals(conf):
     n_dims = conf.model.n_dims
@@ -209,6 +213,10 @@ def build_evals(conf):
     evaluation_kwargs = {}
 
     evaluation_kwargs["standard"] = {"prompting_strategy": "standard"}
+    evaluation_kwargs["gradient"] = {
+        "prompting_strategy": "standard",
+        "task_sampler_kwargs": {"compute_gradient": True}
+    }
     if task_name != "linear_regression":
         if task_name in ["relu_2nn_regression"]:
             evaluation_kwargs["linear_regression"] = {"task_name": "linear_regression"}
@@ -389,6 +397,23 @@ def read_run_dir(run_dir):
     df = pd.DataFrame(all_runs).sort_values("run_name")
     assert len(df) == len(df.run_name.unique())
     return df
+
+# Figure 3 and 4:
+def compute_gradient_alignment(model, task, xs, n_points=40):
+    w = task.get_ground_truth()
+
+    alignments  = []
+    for k in range(n_points):
+        direction = torch.rand_like(w)
+        direction = direction / direction.norm()
+
+        x = direction.requires_grad_(True)
+        with torch.enable_grad():
+            pred = model(xs[:k], task.evaluate(xs[:k]), x.unsqueeze(0))
+            grad = torch.autograd.grad(pred.sum(), x)[0]
+        alignments  = (grad @ w) / (grad.norm() * w.norm())
+        alignments.append(alignments.item())
+    return alignments
 
 if __name__ == "__main__":
     run_dir = sys.argv[1]

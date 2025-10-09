@@ -414,3 +414,30 @@ class AR1LinearRegression(Task):
     @staticmethod
     def get_training_metric():
         return mean_squared_error
+
+# class AR2RegressionTask:
+    # def __init__(self, ar1_coef=0.5, ar2_coef=0.3, noise_std=1.0):
+    #     """
+    #     AR(2) Regression Task: y_t = ar1_coef * y_{t-1} + ar2_coef * y_{t-2} + epsilon_t
+    #     where epsilon_t ~ N(0, noise_std^2)
+        
+    #     ar1_coef: AR(1) coefficient
+    #     ar2_coef: AR(2) coefficient
+    #     noise_std: standard deviation of innovation noise
+    #     """
+    #     self.ar1_coef = ar1_coef
+    #     self.ar2_coef = ar2_coef
+    #     self.noise_std = noise_std
+    # def evaluate(self, xs):
+    #     batch_size, seq_len, dim = xs.shape
+    #     ys = torch.zeros(xs)
+
+    #     ys[:, 0:2, :] = xs[:, 0:2, :]  # Initialize first two values
+
+    #     for t in range(2, seq_len):
+    #         ys[:, t, :] = (self.ar1_coef * ys[:, t-1, :] +
+    #                        self.ar2_coef * ys[:, t-2, :] + 
+    #                        self.noise_std * torch.randn_like(xs[:, t, :]))
+    #     return ys
+    # def get_metric(self):
+    #     return lambda pred, target: ((pred - target) ** 2).mean(dim=-1)
