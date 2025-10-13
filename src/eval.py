@@ -186,11 +186,12 @@ def eval_model(
 
     metrics = torch.cat(all_metrics, dim=0)
     results = aggregate_metrics(metrics)
-    
+
     if prompting_strategy == "standard":
         grad_alignments = compute_gradient_alignment(model, task_sampler(), xs[0])
-        results["gradient_alignment"] = grad_alignments
-    
+        if grad_alignments is not None:
+            results["gradient_alignment"] = grad_alignments
+
     return results
 
 def build_evals(conf):
@@ -213,7 +214,6 @@ def build_evals(conf):
     evaluation_kwargs = {}
 
     evaluation_kwargs["standard"] = {"prompting_strategy": "standard"}
-<<<<<<< HEAD
     evaluation_kwargs["gradient"] = {
         "prompting_strategy": "standard",
         "task_sampler_kwargs": {"compute_gradient": True}
@@ -221,9 +221,6 @@ def build_evals(conf):
     
     task_name =["linear_regression" if task_name == "ar1_linear_regression" else task_name][0]
     if task_name != "linear_regression":
-=======
-    if task_name not in ["linear_regression", "ar1_linear_regression"]:
->>>>>>> 767436f (Update fetures)
         if task_name in ["relu_2nn_regression"]:
             evaluation_kwargs["linear_regression"] = {"task_name": "linear_regression"}
         for name, kwargs in evaluation_kwargs.items():
@@ -406,19 +403,38 @@ def read_run_dir(run_dir):
 
 # Figure 3 and 4:
 def compute_gradient_alignment(model, task, xs, n_points=40):
-    w = task.get_ground_truth()
 
-    alignments  = []
-    for k in range(n_points):
-        direction = torch.rand_like(w)
-        direction = direction / direction.norm()
+    device = next(model.parameters()).device
+    # ground-truth weight for this task (take first in batch)
+    w = task.w_b[0, :, 0].to(device)
 
-        x = direction.requires_grad_(True)
+    alignments = []
+    max_points = min(n_points, xs.shape[0])
+
+    for k in range(max_points):
+        # Context up to k
+        ctx_xs = xs[:k].unsqueeze(0).to(device)
+        if k > 0:
+            ctx_ys = task.evaluate(ctx_xs.detach().cpu()).to(device)
+        else:
+            ctx_ys = torch.zeros(1, 0, device=device)
+
+        # Random query direction normalized and scaled to match data norm
+        direction = torch.randn_like(w)
+        direction = direction / (direction.norm() + 1e-8)
+        scale = xs[k].norm() if k < xs.shape[0] else xs[-1].norm()
+        x_query = (direction * (scale + 1e-8)).detach().clone().requires_grad_(True)
+
+        xs_with_query = torch.cat([ctx_xs, x_query.view(1, 1, -1)], dim=1)
+        ys_with_dummy = torch.cat([ctx_ys, torch.zeros(1, 1, device=device)], dim=1)
+
         with torch.enable_grad():
-            pred = model(xs[:k], task.evaluate(xs[:k]), x.unsqueeze(0))
-            grad = torch.autograd.grad(pred.sum(), x)[0]
-        alignments  = (grad @ w) / (grad.norm() * w.norm())
-        alignments.append(alignments.item())
+            pred = model(xs_with_query, ys_with_dummy, inds=[k])
+            grad = torch.autograd.grad(pred.sum(), x_query)[0]
+
+        cos_sim = torch.dot(grad, w) / (grad.norm() * w.norm() + 1e-8)
+        alignments.append(float(cos_sim.detach().cpu()))
+
     return alignments
 
 if __name__ == "__main__":
