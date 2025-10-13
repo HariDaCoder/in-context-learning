@@ -41,6 +41,7 @@ TASK_LIST = [
     "relu_2nn_regression",
     "decision_tree",
     "noisy_linear_regression",
+    "ar1_linear_regression",
 ]
 
 training_schema = {
@@ -48,7 +49,7 @@ training_schema = {
     "task_kwargs": merge(tdict, required),
     "num_tasks": merge(tinteger, nullable, default(None)),
     "num_training_examples": merge(tinteger, nullable, default(None)),
-    "data": merge(tstring, allowed(["gaussian","ar1","var1"])),
+    "data": merge(tstring, allowed(["gaussian","ar1","var1","ar2"])),
     "batch_size": merge(tinteger, default(64)),
     "learning_rate": merge(tfloat, default(3e-4)),
     "train_steps": merge(tinteger, default(1000)),
