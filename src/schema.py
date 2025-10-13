@@ -42,6 +42,8 @@ TASK_LIST = [
     "decision_tree",
     "noisy_linear_regression",
     "ar1_linear_regression",
+    "ar2_linear_regression",
+    "non_stationary_linear_regression",
 ]
 
 training_schema = {

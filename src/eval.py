@@ -213,6 +213,7 @@ def build_evals(conf):
     evaluation_kwargs = {}
 
     evaluation_kwargs["standard"] = {"prompting_strategy": "standard"}
+<<<<<<< HEAD
     evaluation_kwargs["gradient"] = {
         "prompting_strategy": "standard",
         "task_sampler_kwargs": {"compute_gradient": True}
@@ -220,6 +221,9 @@ def build_evals(conf):
     
     task_name =["linear_regression" if task_name == "ar1_linear_regression" else task_name][0]
     if task_name != "linear_regression":
+=======
+    if task_name not in ["linear_regression", "ar1_linear_regression"]:
+>>>>>>> 767436f (Update fetures)
         if task_name in ["relu_2nn_regression"]:
             evaluation_kwargs["linear_regression"] = {"task_name": "linear_regression"}
         for name, kwargs in evaluation_kwargs.items():

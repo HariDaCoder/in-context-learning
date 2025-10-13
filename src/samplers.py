@@ -15,9 +15,12 @@ def get_data_sampler(data_name, n_dims, **kwargs):
     names_to_classes = {
         "gaussian": GaussianSampler,
         "ar1":AR1Sampler,
+<<<<<<< HEAD
         # "var1":VAR1Sampler,
         "ar2":AR2Sampler,
         "vr2":VR2Sampler,
+=======
+>>>>>>> 767436f (Update fetures)
     }
     if data_name in names_to_classes:
         sampler_cls = names_to_classes[data_name]
