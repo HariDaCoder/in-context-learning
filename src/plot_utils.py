@@ -9,40 +9,53 @@ from models import build_model
 sns.set_theme("notebook", "darkgrid")
 palette = sns.color_palette("colorblind")
 
-
 relevant_model_names = {
     "linear_regression": [
-        "Transformer",
+        "Transformer", 
         "Least Squares",
-        "3-Nearest Neighbors",
-        "Averaging",
+        "Ridge Var Adj (alpha=1.0, ar=0.5)",
+        "Feasible GLS",
+        "GLS (ar=0.5)",
+        # "3-Nearest Neighbors",
+        # "Averaging"
     ],
     "sparse_linear_regression": [
         "Transformer",
-        "Least Squares",
+        "Least Squares", 
         "3-Nearest Neighbors",
         "Averaging",
+        "Lasso (alpha=0.001)",
         "Lasso (alpha=0.01)",
+        "Lasso (alpha=0.1)",
+        "Lasso (alpha=1.0)"
     ],
     "decision_tree": [
         "Transformer",
+        "Least Squares",
         "3-Nearest Neighbors",
-        "2-layer NN, GD",
-        "Greedy Tree Learning",
+        "Decision Tree (max_depth=4)", 
+        "Decision Tree (unlimited)",
         "XGBoost",
+        "Averaging"
     ],
     "relu_2nn_regression": [
         "Transformer",
         "Least Squares",
         "3-Nearest Neighbors",
-        "2-layer NN, GD",
+        "2-layer NN (Adam)",
+        "Averaging"
     ],
     "ar1_linear_regression": [
         "Transformer",
         "Least Squares",
         "3-Nearest Neighbors",
-        "2-layer NN, GD",
-    ],
+        "Ridge (alpha=0.1)",
+        "Ridge (alpha=1.0)",
+        "Ridge Var Adj (alpha=1.0, ar=0.5)",
+        "Feasible GLS", 
+        "GLS (ar=0.5)",
+        "Averaging"
+    ]
 }
 
 

@@ -62,12 +62,15 @@ def get_task_sampler(
         "decision_tree": DecisionTree,
         "ar1_linear_regression": AR1LinearRegression,
     }
+
     if task_name in task_names_to_classes:
         task_cls = task_names_to_classes[task_name]
         if num_tasks is not None:
             if pool_dict is not None:
                 raise ValueError("Either pool_dict or num_tasks should be None.")
             pool_dict = task_cls.generate_pool_dict(n_dims, num_tasks, **kwargs)
+        
+        # Simple return for all tasks - no special case needed
         return lambda **args: task_cls(n_dims, batch_size, pool_dict, **args, **kwargs)
     else:
         print("Unknown task")
@@ -348,7 +351,7 @@ class DecisionTree(Task):
     def get_training_metric():
         return mean_squared_error
 class AR1LinearRegression(Task):
-    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, ar_coef=0.5, noise_std=1.0):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, ar_coef=0.5, noise_std=1.0,compute_gradient=False):
         """
         AR(1) Linear Regression: y_t = x_t^T w + epsilon_t
         where epsilon_t = ar_coef * epsilon_{t-1} + u_t, u_t ~ N(0, noise_std^2)
@@ -361,7 +364,7 @@ class AR1LinearRegression(Task):
         self.scale = scale
         self.ar_coef = ar_coef
         self.noise_std = noise_std
-
+        self.compute_gradient = compute_gradient
         if pool_dict is None and seeds is None:
             self.w_b = torch.randn(self.b_size, self.n_dims, 1)
         elif seeds is not None:

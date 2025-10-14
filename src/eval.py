@@ -187,11 +187,21 @@ def eval_model(
     metrics = torch.cat(all_metrics, dim=0)
     results = aggregate_metrics(metrics)
 
+    # if prompting_strategy == "standard":
+    #     grad_alignments = compute_gradient_alignment(model, task_sampler(), xs[0])
+    #     if grad_alignments is not None:
+    #         results["gradient_alignment"] = grad_alignments
     if prompting_strategy == "standard":
-        grad_alignments = compute_gradient_alignment(model, task_sampler(), xs[0])
-        if grad_alignments is not None:
-            results["gradient_alignment"] = grad_alignments
-
+        # sample a single long prefix to compute gradients on (use same data_sampler)
+        xs_samp = data_sampler.sample_xs(n_points=min(n_points, 40), b_size=1)[0]
+        task = task_sampler()
+        try:
+            grad_alignments = compute_gradient_alignment(model, task, xs_samp, n_points=min(40, n_points))
+            if grad_alignments is not None:
+                results["gradient_alignment"] = grad_alignments
+        except Exception:
+            # best-effort: don't fail whole eval if grad computation crashes
+            pass
     return results
 
 def build_evals(conf):
@@ -342,26 +352,50 @@ def conf_to_model_name(conf):
     else:
         return conf.wandb.name
 
-
 def baseline_names(name):
+    """Map internal model names to display names"""
     if "OLS" in name:
         return "Least Squares"
+    
     if name == "averaging":
         return "Averaging"
-    if "NN" in name:
-        k = name.split("_")[1].split("=")[1]
+        
+    if "NN_n=" in name:
+        k = name.split("n=")[1].split("_")[0]
         return f"{k}-Nearest Neighbors"
+        
     if "lasso" in name:
-        alpha = name.split("_")[1].split("=")[1]
+        alpha = name.split("alpha=")[1].split("_")[0]
         return f"Lasso (alpha={alpha})"
-    if "gd" in name:
-        return "2-layer NN, GD"
+        
+    if "gd" in name and "adam" in name:
+        return "2-layer NN (Adam)"
+        
     if "decision_tree" in name:
-        return "Greedy Tree Learning"
+        depth = name.split("max_depth=")[1]
+        return f"Decision Tree ({'unlimited' if depth=='None' else f'max_depth={depth}'})"
+        
     if "xgboost" in name:
         return "XGBoost"
-    return name
+        
+    if "ridge_var_adj" in name:
+        alpha = name.split("alpha=")[1].split("_")[0]
+        ar = name.split("ar=")[1]
+        return f"Ridge Var Adj (alpha={alpha}, ar={ar})"
+        
+    if "ridge_alpha" in name:
+        alpha = name.split("alpha=")[1]
+        return f"Ridge (alpha={alpha})"
+        
+    if "feasible_gls" in name:
+        ar = name.split("ar=")[1]
+        return "Feasible GLS" if ar=='est' else f"Feasible GLS (ar={ar})"
+        
+    if "gls_ar" in name:
+        ar = name.split("ar=")[1]
+        return f"GLS (ar={ar})"
 
+    return name
 
 def read_run_dir(run_dir):
     all_runs = {}
@@ -402,41 +436,89 @@ def read_run_dir(run_dir):
     return df
 
 # Figure 3 and 4:
-def compute_gradient_alignment(model, task, xs, n_points=40):
+# def compute_gradient_alignment(model, task, xs, n_points=40):
 
-    device = next(model.parameters()).device
-    # ground-truth weight for this task (take first in batch)
+#     device = next(model.parameters()).device
+#     # ground-truth weight for this task (take first in batch)
+#     w = task.w_b[0, :, 0].to(device)
+
+#     alignments = []
+#     max_points = min(n_points, xs.shape[0])
+
+#     for k in range(max_points):
+#         # Context up to k
+#         ctx_xs = xs[:k].unsqueeze(0).to(device)
+#         if k > 0:
+#             ctx_ys = task.evaluate(ctx_xs.detach().cpu()).to(device)
+#         else:
+#             ctx_ys = torch.zeros(1, 0, device=device)
+
+#         # Random query direction normalized and scaled to match data norm
+#         direction = torch.randn_like(w)
+#         direction = direction / (direction.norm() + 1e-8)
+#         scale = xs[k].norm() if k < xs.shape[0] else xs[-1].norm()
+#         x_query = (direction * (scale + 1e-8)).detach().clone().requires_grad_(True)
+#         print("ctx_ys.shape:", ctx_ys.shape)
+#         print("ys_with_dummy.shape:", ys_with_dummy.shape)
+#         xs_with_query = torch.cat([ctx_xs, x_query.view(1, 1, -1)], dim=1)
+#         ys_with_dummy = torch.cat(
+#             [ctx_ys, torch.zeros(ctx_ys.size(0), 1, device=device)],
+#             dim=1
+#         )
+
+#         with torch.enable_grad():
+#             pred = model(xs_with_query, ys_with_dummy, inds=[k])
+#             grad = torch.autograd.grad(pred.sum(), x_query)[0]
+
+#         cos_sim = torch.dot(grad, w) / (grad.norm() * w.norm() + 1e-8)
+#         alignments.append(float(cos_sim.detach().cpu()))
+
+#     return alignments
+def compute_gradient_alignment(model, task, xs, n_points=40):
+    """
+    Compute cosine similarity between model gradient (w.r.t. query input) and
+    the true task weight w. xs: (n_points, d) single sample (no batch dim).
+    Returns list of length <= n_points with float cosines.
+    """
+    device = "cuda" if torch.cuda.is_available() and next(model.parameters()).is_cuda else "cpu"
+    model = model.to(device).eval()
+
+    # get ground-truth weight if available
+    if not hasattr(task, "w_b"):
+        return None
     w = task.w_b[0, :, 0].to(device)
 
     alignments = []
-    max_points = min(n_points, xs.shape[0])
-
-    for k in range(max_points):
-        # Context up to k
-        ctx_xs = xs[:k].unsqueeze(0).to(device)
+    max_k = min(n_points, xs.shape[0])
+    for k in range(max_k):
+        # context (0..k-1)
+        ctx_xs = xs[:k].unsqueeze(0).to(device)  # (1, k, d)
         if k > 0:
             ctx_ys = task.evaluate(ctx_xs.detach().cpu()).to(device)
         else:
             ctx_ys = torch.zeros(1, 0, device=device)
 
-        # Random query direction normalized and scaled to match data norm
-        direction = torch.randn_like(w)
+        # random direction scaled to typical norm
+        direction = torch.randn_like(w, device=device)
         direction = direction / (direction.norm() + 1e-8)
         scale = xs[k].norm() if k < xs.shape[0] else xs[-1].norm()
-        x_query = (direction * (scale + 1e-8)).detach().clone().requires_grad_(True)
+        x_query = (direction * (scale + 1e-8)).detach().clone().requires_grad_(True).view(1, 1, -1).to(device)
 
-        xs_with_query = torch.cat([ctx_xs, x_query.view(1, 1, -1)], dim=1)
+        xs_with_query = torch.cat([ctx_xs, x_query], dim=1)
         ys_with_dummy = torch.cat([ctx_ys, torch.zeros(1, 1, device=device)], dim=1)
 
         with torch.enable_grad():
             pred = model(xs_with_query, ys_with_dummy, inds=[k])
-            grad = torch.autograd.grad(pred.sum(), x_query)[0]
+            # pred could be tensor with shape (1, m) or scalar-like; sum to scalar
+            loss_term = pred.sum()
+            grad = torch.autograd.grad(loss_term, x_query, retain_graph=False, create_graph=False)[0].view(-1)
 
-        cos_sim = torch.dot(grad, w) / (grad.norm() * w.norm() + 1e-8)
-        alignments.append(float(cos_sim.detach().cpu()))
+        # cosine similarity between grad and w
+        denom = (grad.norm() * w.norm() + 1e-8)
+        cos_sim = float(torch.dot(grad, w).cpu() / denom.cpu())
+        alignments.append(cos_sim)
 
     return alignments
-
 if __name__ == "__main__":
     run_dir = sys.argv[1]
     for task in os.listdir(run_dir):

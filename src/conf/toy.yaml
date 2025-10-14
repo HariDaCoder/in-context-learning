@@ -19,22 +19,24 @@ training:
       inc: 0
       interval: 1
     points:
-      start: 11
-      end: 11
+      start: 6
+      end: 6
       inc: 0
       interval: 1
-  data: ar2
-  keep_every_steps: 100000
+  data: ar1
+  keep_every_steps: 10000
   learning_rate: 0.0003
   num_tasks: null
   num_training_examples: null
   resume_id: null
-  save_every_steps: 1000
+  save_every_steps: 100
   task: ar1_linear_regression
-  task_kwargs: {} 
-  train_steps: 50001
+  task_kwargs: {
+    "compute_gradient": True
+  } 
+  train_steps: 501
 
 out_dir: ../models/linear_regression
 
 wandb:
-    name: "ar2_10_points"
+    name: "fig3_6_points_"
