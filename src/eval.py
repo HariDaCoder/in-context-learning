@@ -226,7 +226,7 @@ def build_evals(conf):
     evaluation_kwargs["standard"] = {"prompting_strategy": "standard"}
     evaluation_kwargs["gradient"] = {
         "prompting_strategy": "standard",
-        "task_sampler_kwargs": {"compute_gradient": True}
+        # "task_sampler_kwargs": {"compute_gradient": True}
     }
     
     task_name =["linear_regression" if task_name == "ar1_linear_regression" else task_name][0]

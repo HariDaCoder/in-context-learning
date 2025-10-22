@@ -198,7 +198,10 @@ class NoisyLinearRegression(LinearRegression):
 
     def evaluate(self, xs_b):
         ys_b = super().evaluate(xs_b)
-        ys_b_noisy = ys_b + torch.randn_like(ys_b) * self.noise_std
+        # ys_b_noisy = ys_b + torch.randn_like(ys_b) * self.noise_std
+        exp_noise = torch.distributions.Exponential(rate=1.0 / self.noise_std)
+        ys_b_noisy = ys_b + exp_noise.sample(ys_b.shape)
+
         if self.renormalize_ys:
             ys_b_noisy = ys_b_noisy * math.sqrt(self.n_dims) / ys_b_noisy.std()
 

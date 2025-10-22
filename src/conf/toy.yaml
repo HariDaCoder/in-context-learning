@@ -15,28 +15,28 @@ training:
   curriculum:
     dims:
       start: 5
-      end: 5
+      end: 10
       inc: 0
       interval: 1
     points:
       start: 6
-      end: 6
+      end: 21
       inc: 0
       interval: 1
-  data: ar1
+  data: gaussian
   keep_every_steps: 10000
   learning_rate: 0.0003
   num_tasks: null
   num_training_examples: null
   resume_id: null
   save_every_steps: 100
-  task: ar1_linear_regression
+  task: noisy_linear_regression
   task_kwargs: {
-    "compute_gradient": True
+    # "compute_gradient": True
   } 
   train_steps: 501
 
 out_dir: ../models/linear_regression
 
 wandb:
-    name: "fig3_6_points_"
+    name: "exponential_noise_experiment"
