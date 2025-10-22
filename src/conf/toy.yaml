@@ -34,7 +34,7 @@ training:
   task_kwargs: {
     # "compute_gradient": True
   } 
-  train_steps: 501
+  train_steps: 50001
 
 out_dir: ../models/linear_regression
 
