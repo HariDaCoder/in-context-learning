@@ -1,7 +1,6 @@
 import os
 from random import randint
 import uuid
-import models   
 
 from quinine import QuinineArgumentParser
 from tqdm import tqdm
@@ -98,7 +97,7 @@ def train(model, args):
                 max(curriculum.n_dims_truncated - ii, 0)
                 for ii in range(curriculum.n_points)
             )
-            / curriculum.n_points
+/ curriculum.n_points
         )
 
         if i % args.wandb.log_every_steps == 0 and not args.test_run:
@@ -136,21 +135,6 @@ def train(model, args):
 
 
 def main(args):
-    # First, define the device
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
-
-    # Create model before trying to move it to device
-    model = models.build_model(args.model)
-    model = model.to(device)
-
-    # Initialize wandb
-    if not args.test_run:
-        wandb.init(
-            config=args,
-            **args.wandb,
-        )
-    
     if args.test_run:
         curriculum_args = args.training.curriculum
         curriculum_args.points.start = curriculum_args.points.end
@@ -175,9 +159,6 @@ def main(args):
 
     if not args.test_run:
         _ = get_run_metrics(args.out_dir)  # precompute metrics for eval
-    xs = xs.to(device)
-    ys = ys.to(device)
-    
 
 
 if __name__ == "__main__":
