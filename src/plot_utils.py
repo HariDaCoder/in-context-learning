@@ -41,7 +41,27 @@ relevant_model_names = {
         "Transformer",
         "Least Squares",
         "3-Nearest Neighbors",
+<<<<<<< Updated upstream
         "2-layer NN, GD",
+=======
+        "Ridge (alpha=0.1)",
+        "Ridge (alpha=1.0)",
+        "Ridge Var Adj (alpha=1.0, ar=0.5)",
+        "Feasible GLS", 
+        "GLS (ar=0.5)",
+        "Averaging"
+    ],
+    "noisy_linear_regression": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.1)",
+        "Ridge (alpha=1.0)",
+        "Ridge Var Adj (alpha=1.0, ar=0.5)",
+        "Feasible GLS", 
+        "GLS (ar=0.5)",
+        # "3-Nearest Neighbors",
+        # "Averaging"
+>>>>>>> Stashed changes
     ],
 }
 

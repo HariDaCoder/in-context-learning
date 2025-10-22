@@ -182,23 +182,44 @@ class NoisyLinearRegression(LinearRegression):
         pool_dict=None,
         seeds=None,
         scale=1,
-        noise_std=0.01,
+        noise_std=0.9,
         renormalize_ys=False,
+        noise_type="poisson",
         uniform=False,
     ):
         """noise_std: standard deviation of noise added to the prediction."""
         super(NoisyLinearRegression, self).__init__(
             n_dims, batch_size, pool_dict, seeds, scale, uniform
         )
-        self.noise_std = noise_std
+        self.noise_std = float(noise_std)
         self.renormalize_ys = renormalize_ys
-
+        self.noise_type = noise_type.lower()
+    def sample_noise(self, shape):
+        if self.noise_type == "normal":
+            noise = torch.randn(shape) * self.noise_std
+        elif self.noise_type == "uniform":
+            a = math.sqrt(3) * self.noise_std
+            noise = torch.empty(shape).uniform_(-a, a)
+        elif self.noise_type == "exponential":
+            exp_noise = torch.distributions.Exponential(rate=1.0 / self.noise_std)
+            noise = exp_noise.sample(shape) - self.noise_std  
+        elif self.noise_type == "beta":
+            alpha, beta = 2.0, 5.0
+            beta_dist = torch.distributions.Beta(alpha, beta)
+            noise = beta_dist.sample(shape) - beta_dist.mean
+        elif self.noise_type == "poisson":
+            lam = max(self.noise_std, 1e-3)
+            poisson_dist = torch.distributions.Poisson(lam)
+            noise = (poisson_dist.sample(shape) - lam) / math.sqrt(lam) * self.noise_std
+        else:
+            raise ValueError(f"Unknown noise type: {self.noise_type}")
+        return noise
     def evaluate(self, xs_b):
         ys_b = super().evaluate(xs_b)
-        ys_b_noisy = ys_b + torch.randn_like(ys_b) * self.noise_std
+        noise = self.sample_noise(ys_b.shape).to(xs_b.device)
+        ys_b_noisy = ys_b + noise
         if self.renormalize_ys:
             ys_b_noisy = ys_b_noisy * math.sqrt(self.n_dims) / ys_b_noisy.std()
-
         return ys_b_noisy
 
 
