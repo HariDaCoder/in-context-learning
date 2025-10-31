@@ -15,7 +15,7 @@ def get_data_sampler(data_name, n_dims, **kwargs):
     names_to_classes = {
         "gaussian": GaussianSampler,
         "ar1":AR1Sampler,
-        # "var1":VAR1Sampler,
+        "vr1":VAR1Sampler,
         "ar2":AR2Sampler,
         "vr2":VR2Sampler,
         "nonstation":NonStationarySampler,
@@ -265,4 +265,50 @@ class NonStationarySampler(DataSampler):
         if self.bias is not None:
             xs_b += self.bias
         
+        return xs_b
+class VAR1Sampler(DataSampler):
+    def __init__(self, n_dims, ar1_mat=None, noise_std=1.0, bias=None, scale=None):
+        super().__init__(n_dims)
+
+        if ar1_mat is None:
+            ar1_mat = 0.9 * torch.eye(n_dims)
+
+        assert ar1_mat.shape == (n_dims, n_dims), "ar1_mat must be n_dims x n_dims"
+
+        if isinstance(ar1_mat, torch.Tensor):
+            self.ar1_mat = ar1_mat.float()
+        else:
+            self.ar1_mat = torch.tensor(ar1_mat, dtype=torch.float32)
+
+        self.noise_std = float(noise_std)
+        self.bias = bias
+        self.scale = scale
+    def sample(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        xs_b = torch.zeros(b_size, n_points, self.n_dims)
+
+        generators = None
+        if seeds is not None:
+            assert len(seeds) == b_size
+            generators = [torch.Generator().manual_seed(int(seed)) for seed in seeds]
+
+        if generators is None:
+            xs_b[:, 0, :] = torch.randn(b_size, self.n_dims)
+        else:
+            for i in range(b_size):
+                xs_b[i, 0, i] = torch.randn(self.n_dims, generator=generators[i])
+        for t in range(1, n_points):
+            if generators is None:
+                eps_t = self.noise_std * torch.randn(b_size, self.n_dims)
+            else:
+                eps_t = torch.zeros(b_size, self.n_dims)
+                for i in range(b_size):
+                    eps_t[i] = self.noise_std * torch.randn(self.n_dims, generator=generators[i])
+            xs_b[:, t, :] = torch.matmul(xs_b[:, t - 1, :], self.ar1_mat.T) + eps_t
+
+            if self.scale is not None:
+                xs_b = xs_b @ self.scale
+            if self.bias is not None:
+                xs_b += self.bias
+            if n_dims_truncated is not None:
+                xs_b[:, :, n_dims_truncated:] = 0
         return xs_b
