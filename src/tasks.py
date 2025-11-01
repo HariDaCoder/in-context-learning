@@ -218,6 +218,18 @@ class NoisyLinearRegression(LinearRegression):
             lam = max(self.noise_std, 1e-3)
             poisson_noise = torch.distributions.Poisson(lam)
             noise = (poisson_noise.sample(shape) - lam) / math.sqrt(lam) * self.noise_std
+        elif self.noise_type == "cauchy":
+            # 6. Nhiễu Cauchy - Đuôi dày, không có Mean/Variance hữu hạn.
+            # Dùng scale parameter để kiểm soát độ trải (như FWHM).
+            scale_param = self.noise_std * 0.5 
+            cauchy_dist = torch.distributions.StudentT(df=1, loc=0, scale=scale_param)
+            noise = cauchy_dist.sample(shape)            
+        elif self.noise_type == "laplace":
+            # 7. Nhiễu Laplace (Double Exponential) - Zero-mean, Var = 2*b^2
+            # Để có Var = noise_std^2, ta cần b = noise_std / sqrt(2)
+            scale_param = self.noise_std / math.sqrt(2.0)
+            laplace_dist = torch.distributions.Laplace(loc=0, scale=scale_param)
+            noise = laplace_dist.sample(shape)
         else:
             raise ValueError(f"Unsupported noise type: {self.noise_type}")
         return noise

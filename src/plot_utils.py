@@ -10,8 +10,19 @@ sns.set_theme("notebook", "darkgrid")
 palette = sns.color_palette("colorblind")
 
 relevant_model_names = {
+    "noisy_linear_regression": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.1)",
+        "Ridge (alpha=1.0)",
+        "Ridge Var Adj (alpha=1.0, ar=0.5)",
+        "Feasible GLS", 
+        "GLS (ar=0.5)",
+        # "3-Nearest Neighbors",
+        # "Averaging"
+    ],
     "linear_regression": [
-        "Transformer", 
+        "gpt2_embd=128_layer=4_head=8", 
         "Least Squares",
         "Ridge Var Adj (alpha=1.0, ar=0.5)",
         "Feasible GLS",
