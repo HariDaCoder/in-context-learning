@@ -22,7 +22,7 @@ relevant_model_names = {
         # "Averaging"
     ],
     "linear_regression": [
-        "gpt2_embd=128_layer=4_head=8", 
+        "Transformer", 
         "Least Squares",
         "Ridge Var Adj (alpha=1.0, ar=0.5)",
         "Feasible GLS",
@@ -112,12 +112,15 @@ def collect_results(run_dir, df, valid_row=None, rename_eval=None, rename_model=
         for eval_name, results in sorted(metrics.items()):
             processed_results = {}
             for model_name, m in results.items():
-                if "gpt2" in model_name in model_name:
-                    model_name = r.model
-                    if rename_model is not None:
-                        model_name = rename_model(model_name, r)
+                # if "gpt2" in model_name in model_name:
+                #     model_name = r.model
+                # code fix
+                if "gpt2" in model_name:
+                    model_name = r.model  # r.model = "Transformer"
                 else:
                     model_name = baseline_names(model_name)
+                if rename_model is not None:
+                    model_name = rename_model(model_name, r)
                 m_processed = {}
                 n_dims = conf.model.n_dims
 

@@ -185,24 +185,25 @@ def eval_model(
         all_metrics.append(metrics)
 
     metrics = torch.cat(all_metrics, dim=0)
-    results = aggregate_metrics(metrics)
+    # results = aggregate_metrics(metrics)
 
+    # # if prompting_strategy == "standard":
+    # #     grad_alignments = compute_gradient_alignment(model, task_sampler(), xs[0])
+    # #     if grad_alignments is not None:
+    # #         results["gradient_alignment"] = grad_alignments
     # if prompting_strategy == "standard":
-    #     grad_alignments = compute_gradient_alignment(model, task_sampler(), xs[0])
-    #     if grad_alignments is not None:
-    #         results["gradient_alignment"] = grad_alignments
-    if prompting_strategy == "standard":
-        # sample a single long prefix to compute gradients on (use same data_sampler)
-        xs_samp = data_sampler.sample_xs(n_points=min(n_points, 40), b_size=1)[0]
-        task = task_sampler()
-        try:
-            grad_alignments = compute_gradient_alignment(model, task, xs_samp, n_points=min(40, n_points))
-            if grad_alignments is not None:
-                results["gradient_alignment"] = grad_alignments
-        except Exception:
-            # best-effort: don't fail whole eval if grad computation crashes
-            pass
-    return results
+    #     # sample a single long prefix to compute gradients on (use same data_sampler)
+    #     xs_samp = data_sampler.sample_xs(n_points=min(n_points, 40), b_size=1)[0]
+    #     task = task_sampler()
+    #     try:
+    #         grad_alignments = compute_gradient_alignment(model, task, xs_samp, n_points=min(40, n_points))
+    #         if grad_alignments is not None:
+    #             results["gradient_alignment"] = grad_alignments
+    #     except Exception:
+    #         # best-effort: don't fail whole eval if grad computation crashes
+    #         pass
+    # return results
+    return aggregate_metrics(metrics)
 
 def build_evals(conf):
     n_dims = conf.model.n_dims
@@ -224,12 +225,12 @@ def build_evals(conf):
     evaluation_kwargs = {}
 
     evaluation_kwargs["standard"] = {"prompting_strategy": "standard"}
-    evaluation_kwargs["gradient"] = {
-        "prompting_strategy": "standard",
-        # "task_sampler_kwargs": {"compute_gradient": True}
-    }
+    # evaluation_kwargs["gradient"] = {
+    #     "prompting_strategy": "standard",
+    #     # "task_sampler_kwargs": {"compute_gradient": True}
+    # }
     
-    task_name =["linear_regression" if task_name == "ar1_linear_regression" else task_name][0]
+    # task_name =["linear_regression" if task_name == "ar1_linear_regression" else task_name][0]
     if task_name != "linear_regression":
         if task_name in ["relu_2nn_regression"]:
             evaluation_kwargs["linear_regression"] = {"task_name": "linear_regression"}
@@ -360,21 +361,30 @@ def baseline_names(name):
     if name == "averaging":
         return "Averaging"
         
-    if "NN_n=" in name:
-        k = name.split("n=")[1].split("_")[0]
+    # if "NN_n=" in name:
+    #     k = name.split("n=")[1].split("_")[0]
+    #     return f"{k}-Nearest Neighbors"
+        
+    # if "lasso" in name:
+    #     alpha = name.split("alpha=")[1].split("_")[0]
+    #     return f"Lasso (alpha={alpha})"
+        
+    # if "gd" in name and "adam" in name:
+    #     return "2-layer NN (Adam)"
+        
+    # if "decision_tree" in name:
+    #     depth = name.split("max_depth=")[1]
+    #     return f"Decision Tree ({'unlimited' if depth=='None' else f'max_depth={depth}'})"
+    if "NN" in name:
+        k = name.split("_")[1].split("=")[1]
         return f"{k}-Nearest Neighbors"
-        
     if "lasso" in name:
-        alpha = name.split("alpha=")[1].split("_")[0]
+        alpha = name.split("_")[1].split("=")[1]
         return f"Lasso (alpha={alpha})"
-        
-    if "gd" in name and "adam" in name:
-        return "2-layer NN (Adam)"
-        
+    if "gd" in name:
+        return "2-layer NN, GD"
     if "decision_tree" in name:
-        depth = name.split("max_depth=")[1]
-        return f"Decision Tree ({'unlimited' if depth=='None' else f'max_depth={depth}'})"
-        
+        return "Greedy Tree Learning"
     if "xgboost" in name:
         return "XGBoost"
         
@@ -432,7 +442,7 @@ def read_run_dir(run_dir):
                 all_runs[k].append(v)
 
     df = pd.DataFrame(all_runs).sort_values("run_name")
-    # assert len(df) == len(df.run_name.unique())
+    assert len(df) == len(df.run_name.unique())
     return df
 
 # Figure 3 and 4:
