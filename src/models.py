@@ -78,6 +78,11 @@ def get_relevant_baselines(task_name):
         ],
         "noisy_linear_regression": [
             (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.1}),
+            (RidgeModel, {"alpha": 1.0}),
+            (RidgeModelWithVarianceAdjustment, {"alpha": 1.0, "ar_coef": 0.5}),
+            (FeasibleGLSModel, {"ar_coef": None}),
+            (GLSModel, {"ar_coef": 0.5}),
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
         ],
