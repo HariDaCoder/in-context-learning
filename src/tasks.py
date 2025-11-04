@@ -185,9 +185,9 @@ class NoisyLinearRegression(LinearRegression):
         pool_dict=None,
         seeds=None,
         scale=1,
-        noise_std=0.9,
+        noise_std=2.0,
         renormalize_ys=False,
-        noise_type="uniform",  # "normal", "uniform", "exponential", "beta", "poisson"
+        noise_type="normal",  # "normal", "uniform", "laplace", "t-student", "cauchy", "exponential", "rayleigh", "beta", "poisson"        
         uniform=False,
     ):
         super(NoisyLinearRegression, self).__init__(
@@ -198,38 +198,53 @@ class NoisyLinearRegression(LinearRegression):
         self.noise_type = noise_type.lower()
 
     def sample_noise(self, shape):
+        # 1.
         if self.noise_type == "normal":
             noise = torch.randn(shape) * self.noise_std
-
+        # 2.
         elif self.noise_type == "uniform":
             a = math.sqrt(3) * self.noise_std
             noise = torch.empty(shape).uniform_(-a, a)
-
-        elif self.noise_type == "exponential":
-            exp_noise = torch.distributions.Exponential(rate=1.0 / self.noise_std)
-            noise = exp_noise.sample(shape) - self.noise_std
-
-        elif self.noise_type == "beta":
-            alpha, beta = 2.0, 5.0
-            beta_dist = torch.distributions.Beta(alpha, beta)
-            noise = (beta_dist.sample(shape) - 0.5) * 2.0 * self.noise_std
-
-        elif self.noise_type == "poisson":
-            lam = max(self.noise_std, 1e-3)
-            poisson_noise = torch.distributions.Poisson(lam)
-            noise = (poisson_noise.sample(shape) - lam) / math.sqrt(lam) * self.noise_std
-        elif self.noise_type == "cauchy":
-            # 6. Nhiễu Cauchy - Đuôi dày, không có Mean/Variance hữu hạn.
-            # Dùng scale parameter để kiểm soát độ trải (như FWHM).
-            scale_param = self.noise_std * 0.5 
-            cauchy_dist = torch.distributions.StudentT(df=1, loc=0, scale=scale_param)
-            noise = cauchy_dist.sample(shape)            
+        # 3.
         elif self.noise_type == "laplace":
-            # 7. Nhiễu Laplace (Double Exponential) - Zero-mean, Var = 2*b^2
-            # Để có Var = noise_std^2, ta cần b = noise_std / sqrt(2)
             scale_param = self.noise_std / math.sqrt(2.0)
             laplace_dist = torch.distributions.Laplace(loc=0, scale=scale_param)
             noise = laplace_dist.sample(shape)
+        # 4.
+        elif self.noise_type == "t-student":
+            df = 3.0
+            scale_param = self.noise_std / math.sqrt(df / (df-2.0))
+            t_dist = torch.distributions.StudentT(df=df, loc=0, scale=scale_param)
+            noise = t_dist.sample(shape)
+        # 5.
+        elif self.noise_type == "cauchy":
+            scale_param = self.noise_std * 0.5 
+            cauchy_dist = torch.distributions.StudentT(df=1, loc=0, scale=scale_param)
+            noise = cauchy_dist.sample(shape)   
+        # 6.
+        elif self.noise_type == "exponential":
+            exp_noise = torch.distributions.Exponential(rate=1.0 / self.noise_std)
+            noise = exp_noise.sample(shape) - self.noise_std
+        # 7.
+        elif self.noise_type == "rayleigh":
+            scale_param = self.noise_std / math.sqrt(2.0 - math.pi / 2.0)
+
+            mean = scale_param * math.sqrt(math.pi / 2.0)
+            rayleigh_dist = torch.distributions.Rayleigh(scale=scale_param)
+            noise = rayleigh_dist.sample(shape) - mean
+        # 8.
+        elif self.noise_type == "beta":
+            alpha, beta = 2.0, 5.0
+            mean = alpha / (alpha + beta)
+            var = (alpha * beta) / ((alpha + beta) **2 * (alpha + beta + 1.0))
+            std = math.sqrt(var)
+            beta_dist = torch.distributions.Beta(alpha, beta)
+            noise = (beta_dist.sample(shape) - mean) / std  * self.noise_std
+        # 9.
+        elif self.noise_type == "poisson":
+            lam = 100.0
+            poisson_noise = torch.distributions.Poisson(lam)
+            noise = (poisson_noise.sample(shape) - lam) / math.sqrt(lam) * self.noise_std         
         else:
             raise ValueError(f"Unsupported noise type: {self.noise_type}")
         return noise
