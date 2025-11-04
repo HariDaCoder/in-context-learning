@@ -57,18 +57,23 @@ def build_parser():
 def run_one(base_config_path: str, noise_type: str, base_run_name: str):
     # Build a fresh Quinine parser each time and override via CLI-like args
     qparser = QuinineArgumentParser(schema=quinine_schema)
-    args = qparser.parse_quinfig(
-        args_list=[
-            "--config",
-            base_config_path,
-            "--training.task",
-            "noisy_linear_regression",
-            "--training.task_kwargs.noise_type",
-            noise_type,
-            "--wandb.name",
-            f"{noise_type}_{base_run_name}",
-        ]
-    )
+
+    # Tạo một danh sách các đối số (arguments)
+    # mà bạn muốn truyền vào
+    cli_args_list = [
+        "--config",
+        base_config_path,
+        "--training.task",
+        "noisy_linear_regression",
+        "--training.task_kwargs.noise_type",
+        noise_type,
+        "--wandb.name",
+        f"{noise_type}_{base_run_name}",
+    ]
+
+    # --- ĐÂY LÀ CHỖ SỬA ---
+    # Truyền trực tiếp danh sách vào, không dùng "args_list="
+    args = qparser.parse_quinfig(cli_args_list)
 
     # Make output directory unique and persist resolved config
     prepare_out_dir(args)
