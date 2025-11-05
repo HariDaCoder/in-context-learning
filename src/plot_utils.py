@@ -13,22 +13,18 @@ relevant_model_names = {
     "noisy_linear_regression": [
         "Transformer",
         "Least Squares",
-        "Ridge (alpha=0.1)",
-        "Ridge (alpha=1.0)",
-        "Ridge Var Adj (alpha=1.0, ar=0.5)",
+        "Ridge (alpha=0.5)",
+        "Ridge Var Adj (alpha=0.5, ar=0.5)",
         "Feasible GLS", 
         "GLS (ar=0.5)",
-        # "3-Nearest Neighbors",
-        # "Averaging"
     ],
     "linear_regression": [
         "Transformer", 
         "Least Squares",
-        "Ridge Var Adj (alpha=1.0, ar=0.5)",
-        "Feasible GLS",
-        "GLS (ar=0.5)",
-        # "3-Nearest Neighbors",
-        # "Averaging"
+        "Ridge (alpha=0.1)", 
+        "Ridge (alpha=0.5)",
+        "3-Nearest Neighbors",
+        "Averaging"
     ],
     "sparse_linear_regression": [
         "Transformer",
@@ -87,7 +83,7 @@ def basic_plot(metrics, models=None, trivial=1.0):
     ax.set_xlabel("in-context examples")
     ax.set_ylabel("squared error")
     ax.set_xlim(-1, len(low) + 0.1)
-    ax.set_ylim(-0.1, 1.25)
+    ax.set_ylim(-0.1, 5)
 
 
     legend = ax.legend(loc="upper left", bbox_to_anchor=(1, 1))
