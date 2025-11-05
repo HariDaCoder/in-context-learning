@@ -21,7 +21,7 @@ relevant_model_names = {
     "linear_regression": [
         "Transformer", 
         "Least Squares",
-        "Ridge (alpha=0.1)", 
+        # "Ridge (alpha=0.1)", 
         "Ridge (alpha=0.5)",
         "3-Nearest Neighbors",
         "Averaging"
@@ -34,7 +34,8 @@ relevant_model_names = {
         "Lasso (alpha=0.001)",
         "Lasso (alpha=0.01)",
         "Lasso (alpha=0.1)",
-        "Lasso (alpha=1.0)"
+        "Lasso (alpha=1.0)",
+        "Ridge (alpha=0.5)"
     ],
     "decision_tree": [
         "Transformer",
@@ -70,7 +71,12 @@ def basic_plot(metrics, models=None, trivial=1.0):
     fig, ax = plt.subplots(1, 1)
 
     if models is not None:
-        metrics = {k: metrics[k] for k in models}
+        print(models)
+        available = [m for m in models if m in metrics]
+        missing = [m for m in models if m not in metrics]
+        if missing:
+            print("Missing metrics for:", missing)
+        metrics = {k: metrics[k] for k in available}
 
     color = 0
     ax.axhline(trivial, ls="--", color="gray")

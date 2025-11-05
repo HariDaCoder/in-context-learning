@@ -36,7 +36,7 @@ training:
   } 
   train_steps: 50001
 
-out_dir: /content/models/linear_regression
+out_dir: ../models/linear_regression
 
 wandb:
     name: "uniform_noise_gaussian_data_experiment"

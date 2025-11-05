@@ -43,6 +43,7 @@ def get_relevant_baselines(task_name):
             (LeastSquaresModel, {}),
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
         ]
         + [(LassoModel, {"alpha": alpha}) for alpha in [1, 0.1, 0.01, 0.001, 0.0001]],
         "relu_2nn_regression": [
