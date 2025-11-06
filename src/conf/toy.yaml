@@ -4,7 +4,7 @@ inherit:
 
 model:
   family: gpt2
-  n_dims: 5
+  n_dims: 15
   n_embd: 128
   n_head: 8
   n_layer: 4
@@ -30,13 +30,13 @@ training:
   num_training_examples: null
   resume_id: null
   save_every_steps: 100
-  task: noisy_linear_regression
+  task: sparse_linear_regression
   task_kwargs: {
     # "compute_gradient": True
   } 
   train_steps: 50001
 
-out_dir: ../models/linear_regression
+out_dir: ../models/sparse_linear_regression
 
 wandb:
-    name: "uniform_noise_gaussian_data_experiment"
+    name: "sparse_linear_regression_standard"
