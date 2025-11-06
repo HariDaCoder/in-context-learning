@@ -89,7 +89,7 @@ def basic_plot(metrics, models=None, trivial=1.0):
     ax.set_xlabel("in-context examples")
     ax.set_ylabel("squared error")
     ax.set_xlim(-1, len(low) + 0.1)
-    ax.set_ylim(-0.1, 5)
+    ax.set_ylim(-0.1, 1)
 
 
     legend = ax.legend(loc="upper left", bbox_to_anchor=(1, 1))
@@ -133,7 +133,11 @@ def collect_results(run_dir, df, valid_row=None, rename_eval=None, rename_model=
 
                 normalization = n_dims
                 if r.task == "sparse_linear_regression":
-                    normalization = int(r.kwargs.split("=")[-1])
+                    try:
+                        normalization = int(r.kwargs.split("=")[-1])
+                    except (ValueError, AttributeError):
+                        # Use default sparsity or n_dims if kwargs is empty
+                        normalization = n_dims
                 if r.task == "decision_tree":
                     normalization = 1
 

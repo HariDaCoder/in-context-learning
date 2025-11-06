@@ -16,6 +16,7 @@ def get_data_sampler(data_name, n_dims, **kwargs):
         "gaussian": GaussianSampler,
         "ar1":AR1Sampler,
         "vr1":VAR1Sampler,
+        "sparse_gaussian": SparseGaussianSampler,
         "ar2":AR2Sampler,
         "vr2":VR2Sampler,
         "nonstation":NonStationarySampler,
@@ -63,6 +64,41 @@ class GaussianSampler(DataSampler):
         return xs_b
 
 # code này là thêm:
+class SparseGaussianSampler(DataSampler):
+    def __init__(self, n_dims, k, bias=None, scale=None):
+        super().__init__(n_dims)
+        if not (0 < k <= n_dims):
+            raise ValueError(f"k (number of non-zero elements) must be an integer in the range (0, {n_dims}]")
+        
+        self.k = int(k)
+        self.bias = bias
+        self.scale = scale
+    
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        if seeds is None:
+            xs_b = torch.zeros(b_size, n_points, self.n_dims)
+            values = torch.randn(b_size, n_points, self.k)
+            rand_scores =  torch.rand(b_size, n_points, self.n_dims)
+            _, indices = torch.topk(rand_scores, self.k, dim=-1)
+            xs_b.scatter_(dim=2, index=indices, src=values)
+        else:
+            xs_b = torch.zeros(b_size, n_points, self.n_dims)
+            assert len(seeds) == b_size
+            for i in range(b_size):
+                generator = torch.Generator().manual_seed(int(seeds[i]))
+                values = torch.randn(n_points, self.k, generator=generator)
+                rand_scores = torch.rand(n_points, self.n_dims, generator=generator)
+                _, indices = torch.topk(rand_scores, self.k, dim=-1)
+                xs_b[i].scatter_(dim=1, index=indices, src=values)
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
+
 class AR1Sampler(DataSampler):
     def __init__(self, n_dims, rho=0.9, noise_std=1.0, bias=None, scale=None,compute_gradient=False):
         super().__init__(n_dims)

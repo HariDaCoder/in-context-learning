@@ -33,6 +33,7 @@ training:
   task: sparse_linear_regression
   task_kwargs: {
     # "compute_gradient": True
+    "sparsity": 5
   } 
   train_steps: 50001
 
