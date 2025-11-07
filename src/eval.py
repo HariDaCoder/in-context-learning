@@ -220,6 +220,8 @@ def build_evals(conf):
         "batch_size": batch_size,
         "data_name": data_name,
         "prompting_strategy": "standard",
+        "data_sampler_kwargs": conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {},
+        "task_kwargs": conf.training.task_kwargs
     }
 
     evaluation_kwargs = {}

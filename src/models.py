@@ -28,6 +28,14 @@ def build_model(conf):
 
 def get_relevant_baselines(task_name):
     task_to_baselines = {
+        "uniform_hypersphere_regression": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.1}),
+            (RidgeModel, {"alpha": 0.5}),
+            (NNModel, {"n_neighbors": 3}),
+            (GLSModel, {"ar_coef": 0.5}),
+            (AveragingModel, {}),
+        ],
         "linear_regression": [
             (LeastSquaresModel, {}),
             (RidgeModel, {"alpha": 0.1}),

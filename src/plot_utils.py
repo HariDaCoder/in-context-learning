@@ -10,6 +10,15 @@ sns.set_theme("notebook", "darkgrid")
 palette = sns.color_palette("colorblind")
 
 relevant_model_names = {
+    "uniform_hypersphere_regression": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.5)",
+        "Ridge (alpha=0.1)",
+        "3-Nearest Neighbors",
+        "Averaging"
+        "GLS (ar=0.5)"
+    ],
     "noisy_linear_regression": [
         "Transformer",
         "Least Squares",
