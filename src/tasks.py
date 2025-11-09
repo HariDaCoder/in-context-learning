@@ -56,6 +56,7 @@ def get_task_sampler(
         "linear_regression": LinearRegression,
         "sparse_linear_regression": SparseLinearRegression,
         "linear_classification": LinearClassification,
+        "uniform_hypersphere_regression": UniformHypersphereRegression,
         "noisy_linear_regression": NoisyLinearRegression,
         "quadratic_regression": QuadraticRegression,
         "relu_2nn_regression": Relu2nnRegression,
@@ -75,6 +76,32 @@ def get_task_sampler(
     else:
         print("Unknown task")
         raise NotImplementedError
+
+class UniformHypersphereRegression(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1):
+        super(LinearRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+
+        if pool_dict is None and seeds is None:
+            w_b = torch.randn(self.b_size, self.n_dims, 1)  
+            self.w_b = w_b / w_b.norm(dim=1, keepdim=True)
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            assert len(seeds) == self.b_size
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                w = torch.randn(self.n_dims, 1, generator=generator)
+                self.w_b[i] = w / torch.norm(w)
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks):
+        w = torch.randn(num_tasks, n_dims, 1)
+        w_normalized = w / torch.norm(w, dim=1, keepdim=True)
+        return {"w": w_normalized}
 
 
 class LinearRegression(Task):

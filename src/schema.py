@@ -44,6 +44,7 @@ TASK_LIST = [
     "ar1_linear_regression",
     "ar2_linear_regression",
     "non_stationary_linear_regression",
+    "uniform_hypersphere_regression",
 ]
 
 training_schema = {

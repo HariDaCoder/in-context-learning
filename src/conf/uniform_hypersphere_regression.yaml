@@ -10,10 +10,12 @@ model:
     n_positions: 100
 
 training:
-    task: uniform_hypersphere_regression  # Using our new task
+    task: uniform_hypersphere_regression
     task_kwargs:
-        scale: 1.0  # Scale factor for weights
-    data: gaussian  # Using standard Gaussian inputs
+        scale: 1.0
+        normalize: true
+    data: gaussian
+    data_kwargs: {}
     curriculum:
         dims:
             start: 20
@@ -27,10 +29,15 @@ training:
             interval: 2000
     batch_size: 32
     learning_rate: 0.0003
-    train_steps: 50001
+    train_steps: 5001
+    save_every_steps: 100
+    keep_every_steps: 10000
 
 out_dir: ../models/uniform_hypersphere_regression
 
 wandb:
-    name: "uniform_hypersphere_regression"
+    project: "in-context-training"
+    entity: "hai-trinh220970-ho-chi-minh-city-university-of-technology"
+    name: "uniform_hypersphere_experiment"
     notes: "Training with weights uniformly distributed on unit hypersphere"
+    log_every_steps: 100
