@@ -26,7 +26,7 @@ def prepare_out_dir(args):
             yaml.dump(args.__dict__, yaml_file, default_flow_style=False)
 
 
-def run_one_experiment(base_config_path: str, task: str, task_kwargs: dict, data_kwargs: dict, run_name: str, resume_id: str = None, data_type: str = None):
+def run_one_experiment(base_config_path: str, task: str, task_kwargs: dict, data_kwargs: dict, run_name: str, resume_id: str = None, data_type: str = None, train_steps: int = None):
     """
     Run a single experiment with specified task, task_kwargs, and data_kwargs.
     
@@ -54,6 +54,8 @@ def run_one_experiment(base_config_path: str, task: str, task_kwargs: dict, data
     base_config['wandb']['name'] = run_name
     if resume_id is not None:
         base_config['training']['resume_id'] = resume_id
+    if train_steps is not None:
+        base_config['training']['train_steps'] = int(train_steps)
 
     # Create temporary config file
     temp_config_file = tempfile.NamedTemporaryFile(
@@ -87,6 +89,8 @@ def run_one_experiment(base_config_path: str, task: str, task_kwargs: dict, data
         print(f"Data kwargs: {data_kwargs}")
         if data_type is not None:
             print(f"Data type: {data_type}")
+        if train_steps is not None:
+            print(f"Train steps override: {train_steps}")
         print(f"{'='*60}\n")
         train_main(args)
 
@@ -218,6 +222,12 @@ def build_parser():
         help="Base prefix for wandb.name",
     )
     parser.add_argument(
+        "--train_steps",
+        type=int,
+        default=None,
+        help="Override training.train_steps for all experiments",
+    )
+    parser.add_argument(
         "--skip_existing",
         action="store_true",
         help="Skip runs that already have config.yaml in output directory",
@@ -328,7 +338,8 @@ def main():
                 data_kwargs,
                 run_name,
                 resume_id=resume_id,
-                data_type=data_type
+                data_type=data_type,
+                train_steps=cli_args.train_steps
             )
         except Exception as e:
             print(f"\n{'!'*60}")
