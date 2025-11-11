@@ -23,10 +23,12 @@ def get_data_sampler(data_name, n_dims, **kwargs):
     }
     if data_name in names_to_classes:
         sampler_cls = names_to_classes[data_name]
-        if 'k' not in kwargs:
+        # Only add 'k' parameter for sparse_gaussian sampler
+        if data_name == "sparse_gaussian" and 'k' not in kwargs:
             kwargs['k'] = n_dims // 2  # default k is half of dimensions
-        if 'scale' not in kwargs:
-            kwargs['scale'] = 1.0      # default scale is 1.0
+        # Only add 'scale' parameter for sparse_gaussian sampler (as scalar)
+        if data_name == "sparse_gaussian" and 'scale' not in kwargs:
+            kwargs['scale'] = 1.0      # default scale is 1.0 for sparse_gaussian
         return sampler_cls(n_dims, **kwargs)
     else:
         print("Unknown sampler")
