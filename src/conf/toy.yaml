@@ -4,23 +4,23 @@ inherit:
 
 model:
   family: gpt2
-  n_dims: 10
+  n_dims: 20
   n_embd: 128
   n_head: 8
   n_layer: 4
-  n_positions: 100
+  n_positions: 101
 
 training:
   batch_size: 32
   curriculum:
     dims:
       start: 5
-      end: 10
+      end: 20
       inc: 1
       interval: 2000
     points:
       start: 6
-      end: 15
+      end: 30
       inc: 2
       interval: 2000
   data: gaussian
@@ -31,10 +31,10 @@ training:
   num_training_examples: null
   resume_id: null
   save_every_steps: 100
-  task: sparse_linear_regression
+  task: noisy_linear_regression
   task_kwargs: {
     # "compute_gradient": True
-    "sparsity": 5
+    # "sparsity": 5
   } 
   train_steps: 50001
 
