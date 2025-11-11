@@ -213,6 +213,31 @@ def build_evals(conf):
     task_name = conf.training.task
     data_name = conf.training.data
 
+    # Sanitize kwargs to avoid passing unsupported keys during evaluation
+    data_whitelist = {
+        "gaussian": {"bias", "scale"},
+        "sparse_gaussian": {"k", "bias", "scale"},
+        "ar1": {"rho", "noise_std", "bias", "scale", "compute_gradient"},
+        "vr1": {"ar1_mat", "noise_std", "bias", "scale"},
+        "ar2": {"ar1_coef", "ar2_coef", "noise_std", "bias", "scale"},
+        "vr2": {"ar1_mat", "ar2_mat", "noise_std", "bias", "scale"},
+        "nonstation": {"coef_base", "coef_amplitude", "noise_std", "bias", "scale"},
+    }
+    task_whitelist = {
+        "linear_regression": {"scale", "uniform"},
+        "sparse_linear_regression": {"scale", "sparsity", "valid_coords"},
+        "linear_classification": {"scale", "uniform"},
+        "relu_2nn_regression": {"scale", "hidden_layer_size"},
+        "decision_tree": {"depth"},
+        "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform"},
+        "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
+        "uniform_hypersphere_regression": {"scale"},
+    }
+    original_data_kwargs = conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {}
+    original_task_kwargs = conf.training.task_kwargs if hasattr(conf.training, "task_kwargs") else {}
+    cleaned_data_kwargs = {k: v for k, v in (original_data_kwargs or {}).items() if k in data_whitelist.get(data_name, set())}
+    cleaned_task_kwargs = {k: v for k, v in (original_task_kwargs or {}).items() if k in task_whitelist.get(task_name, set())}
+
     base_kwargs = {
         "task_name": task_name,
         "n_dims": n_dims,
@@ -220,8 +245,10 @@ def build_evals(conf):
         "batch_size": batch_size,
         "data_name": data_name,
         "prompting_strategy": "standard",
-        "data_sampler_kwargs": conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {},
-        "task_sampler_kwargs": conf.training.task_kwargs
+        # "data_sampler_kwargs": conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {},
+        # "task_sampler_kwargs": conf.training.task_kwargs
+        "data_sampler_kwargs": cleaned_data_kwargs,
+        "task_sampler_kwargs": cleaned_task_kwargs
     }
 
     evaluation_kwargs = {}
