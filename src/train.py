@@ -41,18 +41,50 @@ def _sanitize_training_kwargs(args):
     Rules:
     - data_kwargs: keep 'k' ONLY when data == 'sparse_gaussian' (k = number of non-zero coords).
     - task_kwargs: keep 'sparsity' ONLY when task == 'sparse_linear_regression'.
+    - In addition, apply per-task and per-data whitelists to drop unsupported keys.
     """
     # Defensive copy
     data_kwargs = dict(getattr(args.training, "data_kwargs", {}) or {})
     task_kwargs = dict(getattr(args.training, "task_kwargs", {}) or {})
 
-    if args.training.data != "sparse_gaussian":
-        data_kwargs.pop("k", None)
-    # 'scale' in data_kwargs is okay for most samplers; leave others as-is
+    # Per-data whitelists
+    data_whitelist = {
+        "gaussian": {"bias", "scale"},
+        "sparse_gaussian": {"k", "bias", "scale"},
+        "ar1": {"rho", "noise_std", "bias", "scale", "compute_gradient"},
+        "vr1": {"ar1_mat", "noise_std", "bias", "scale"},
+        "ar2": {"ar1_coef", "ar2_coef", "noise_std", "bias", "scale"},
+        "vr2": {"ar1_mat", "ar2_mat", "noise_std", "bias", "scale"},
+        "nonstation": {"coef_base", "coef_amplitude", "noise_std", "bias", "scale"},
+    }
 
-    if args.training.task != "sparse_linear_regression":
-        task_kwargs.pop("sparsity", None)
-    # Leave other task-specific kwargs (e.g., noise_std for noisy_linear_regression) as-is
+    data_name = args.training.data
+    if data_name in data_whitelist:
+        allowed = data_whitelist[data_name]
+        data_kwargs = {k: v for k, v in data_kwargs.items() if k in allowed}
+    else:
+        # Unknown data: drop potentially conflicting keys
+        data_kwargs = {}
+
+    # Per-task whitelists
+    task_whitelist = {
+        "linear_regression": {"scale", "uniform"},
+        "sparse_linear_regression": {"scale", "sparsity", "valid_coords"},
+        "linear_classification": {"scale", "uniform"},
+        "relu_2nn_regression": {"scale", "hidden_layer_size"},
+        "decision_tree": {"depth"},
+        "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform"},
+        "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
+        "uniform_hypersphere_regression": {"scale"},
+    }
+
+    task_name = args.training.task
+    if task_name in task_whitelist:
+        allowed = task_whitelist[task_name]
+        task_kwargs = {k: v for k, v in task_kwargs.items() if k in allowed}
+    else:
+        # Unknown task: be conservative
+        task_kwargs = {}
 
     args.training.data_kwargs = data_kwargs
     args.training.task_kwargs = task_kwargs
