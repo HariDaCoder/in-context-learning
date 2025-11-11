@@ -97,11 +97,25 @@ class UniformHypersphereRegression(Task):
             assert "w" in pool_dict
             indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
             self.w_b = pool_dict["w"][indices]
+
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_b = self.scale * (xs_b @ w_b)[:, :, 0]
+        return ys_b
+
     @staticmethod
     def generate_pool_dict(n_dims, num_tasks):
         w = torch.randn(num_tasks, n_dims, 1)
         w_normalized = w / torch.norm(w, dim=1, keepdim=True)
         return {"w": w_normalized}
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
 
 
 class LinearRegression(Task):
