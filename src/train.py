@@ -35,6 +35,29 @@ def sample_seeds(total_seeds, count):
     return seeds
 
 
+def _sanitize_training_kwargs(args):
+    """
+    Remove conflicting/irrelevant kwargs to avoid sampler/task constructor errors.
+    Rules:
+    - data_kwargs: keep 'k' ONLY when data == 'sparse_gaussian' (k = number of non-zero coords).
+    - task_kwargs: keep 'sparsity' ONLY when task == 'sparse_linear_regression'.
+    """
+    # Defensive copy
+    data_kwargs = dict(getattr(args.training, "data_kwargs", {}) or {})
+    task_kwargs = dict(getattr(args.training, "task_kwargs", {}) or {})
+
+    if args.training.data != "sparse_gaussian":
+        data_kwargs.pop("k", None)
+    # 'scale' in data_kwargs is okay for most samplers; leave others as-is
+
+    if args.training.task != "sparse_linear_regression":
+        task_kwargs.pop("sparsity", None)
+    # Leave other task-specific kwargs (e.g., noise_std for noisy_linear_regression) as-is
+
+    args.training.data_kwargs = data_kwargs
+    args.training.task_kwargs = task_kwargs
+
+
 def train(model, args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.training.learning_rate)
     curriculum = Curriculum(args.training.curriculum)
@@ -51,6 +74,10 @@ def train(model, args):
 
     n_dims = model.n_dims
     bsize = args.training.batch_size
+
+    # Sanitize kwargs before constructing samplers/tasks to prevent conflicts
+    _sanitize_training_kwargs(args)
+
     data_sampler = get_data_sampler(args.training.data, n_dims=n_dims, **args.training.data_kwargs)
     task_sampler = get_task_sampler(
         args.training.task, 

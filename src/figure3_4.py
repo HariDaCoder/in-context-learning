@@ -59,7 +59,7 @@ def _prepare(run_path: str):
     task_sampler = get_task_sampler(
         conf.training.task,
         n_dims,
-        b_size=1,
+        batch_size=1,
         **conf.training.task_kwargs,
     )
     return model, conf, data_sampler, task_sampler, device

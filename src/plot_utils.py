@@ -16,8 +16,7 @@ relevant_model_names = {
         "Ridge (alpha=0.5)",
         "Ridge (alpha=0.1)",
         "3-Nearest Neighbors",
-        "Averaging"
-        "GLS (ar=0.5)"
+        "Averaging",
     ],
     "noisy_linear_regression": [
         "Transformer",
