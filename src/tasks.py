@@ -79,7 +79,7 @@ def get_task_sampler(
 
 class UniformHypersphereRegression(Task):
     def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1):
-        super(LinearRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        super(UniformHypersphereRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
         self.scale = scale
 
         if pool_dict is None and seeds is None:
