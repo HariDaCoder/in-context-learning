@@ -45,6 +45,7 @@ TASK_LIST = [
     "ar2_linear_regression",
     "non_stationary_linear_regression",
     "uniform_hypersphere_regression",
+    "exponential_weighted_regression",
 ]
 
 training_schema = {
