@@ -28,6 +28,10 @@ def build_model(conf):
 
 def get_relevant_baselines(task_name):
     task_to_baselines = {
+        "exponential_weighted_regression": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
         "uniform_hypersphere_regression": [
             (LeastSquaresModel, {}),
             (RidgeModel, {"alpha": 0.1}),

@@ -117,7 +117,7 @@ class UniformHypersphereRegression(Task):
     @staticmethod
     def get_training_metric():
         return mean_squared_error
-class ExponentialWeightedRegression(Tasks):
+class ExponentialWeightedRegression(Task):
     def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, rate=1.0):
         super(ExponentialWeightedRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
         self.scale = scale
@@ -313,15 +313,18 @@ class NoisyLinearRegression(LinearRegression):
         elif self.noise_type == "beta":
             alpha, beta = 2.0, 5.0
             mean = alpha / (alpha + beta)
-            var = (alpha * beta) / ((alpha + beta) **2 * (alpha + beta + 1.0))
+            var = (alpha * beta) / (((alpha + beta) ** 2) * (alpha + beta + 1))
             std = math.sqrt(var)
-            beta_dist = torch.distributions.Beta(alpha, beta)
-            noise = (beta_dist.sample(shape) - mean) / std  * self.noise_std
+            beta_dist = torch.distributions.Beta(concentration1=alpha, concentration0=beta)
+            X = beta_dist.sample(shape)
+            noise = (X - mean) / std * self.noise_std
         # 9.
         elif self.noise_type == "poisson":
-            lam = 100.0
+            lam = 3.0
             poisson_noise = torch.distributions.Poisson(lam)
-            noise = (poisson_noise.sample(shape) - lam) / math.sqrt(lam) * self.noise_std         
+            X = poisson_noise.sample(shape)
+            scale_factor = self.noise_std / math.sqrt(lam)
+            noise = (X - lam) * scale_factor     
         else:
             raise ValueError(f"Unsupported noise type: {self.noise_type}")
         return noise

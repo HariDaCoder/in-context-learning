@@ -10,6 +10,11 @@ sns.set_theme("notebook", "darkgrid")
 palette = sns.color_palette("colorblind")
 
 relevant_model_names = {
+    "exponential_weighted_regression": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.5)",
+    ],
     "uniform_hypersphere_regression": [
         "Transformer",
         "Least Squares",
