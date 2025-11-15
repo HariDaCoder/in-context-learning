@@ -118,13 +118,13 @@ class UniformHypersphereRegression(Task):
     def get_training_metric():
         return mean_squared_error
 class LaplaceWeightedRegression(Task):
-    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, rate=1.0):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, weight_scale=1.0):
         super(LaplaceWeightedRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
         self.scale = scale
-        self.rate = rate
-        
+        self.weight_scale = weight_scale # self.weight_scale as weight_scale
+
         if pool_dict is None and seeds is None:
-            laplace_dist = torch.distributions.Laplace(rate=self.rate)
+            laplace_dist = torch.distributions.Laplace(loc=0, scale=self.weight_scale)
             self.w_b = laplace_dist.sample((self.b_size, self.n_dims, 1))
         elif seeds is not None:
             self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
@@ -132,27 +132,30 @@ class LaplaceWeightedRegression(Task):
             assert len(seeds) == self.b_size
             for i, seed in enumerate(seeds):
                 generator.manual_seed(seed)
-                laplace_dist = torch.distributions.Laplace(rate=self.rate)
+                laplace_dist = torch.distributions.Laplace(loc=0, scale=self.weight_scale)
                 self.w_b[i] = laplace_dist.sample((self.n_dims, 1))
         else:
             assert "w" in pool_dict
             indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
             self.w_b = pool_dict["w"][indices]
+            
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)
         ys_b = self.scale * (xs_b @ w_b)[:, :, 0]
         return ys_b
+
     @staticmethod
-    def generate_pool_dict(n_dims, num_tasks, rate=1.0):
-        laplace_dist = torch.distributions.Laplace(rate=rate)
+    def generate_pool_dict(n_dims, num_tasks, weight_scale=1.0):
+        laplace_dist = torch.distributions.Laplace(loc=0, scale=weight_scale)
         return {"w": laplace_dist.sample((num_tasks, n_dims, 1))}
+
     @staticmethod
     def get_metric():
         return squared_error
+
     @staticmethod
     def get_training_metric():
         return mean_squared_error
-        
 class ExponentialWeightedRegression(Task):
     def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, rate=1.0):
         super(ExponentialWeightedRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
