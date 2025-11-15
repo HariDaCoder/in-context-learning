@@ -10,7 +10,7 @@ model:
     n_positions: 101
 
 training:
-    task: exponential_weights_regression
+    task: exponential_weighted_regression
     task_kwargs:
         rate: 1.0        # exponential distribution rate parameter
         scale: 1.0
@@ -33,7 +33,7 @@ training:
     save_every_steps: 100
     keep_every_steps: 10000
 
-out_dir: ../models/exponential_weights_regression
+out_dir: ../models/exponential_weighted_regression
 
 wandb:
     project: "in-context-training"
