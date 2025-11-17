@@ -347,11 +347,16 @@ class NoisyLinearRegression(LinearRegression):
             noise = exp_noise.sample(shape) - self.noise_std
         # 7.
         elif self.noise_type == "rayleigh":
-            scale_param = self.noise_std / math.sqrt(2.0 - math.pi / 2.0)
+            lambda_param = self.noise_std / math.sqrt(2.0 - math.pi / 2.0)
+            # R = sqrt(X^2 + Y^2) với X, Y ~ N(0, sigma^2), 
+            # where sigma = lambda_param.
+            sigma = lambda_param
 
-            mean = scale_param * math.sqrt(math.pi / 2.0)
-            rayleigh_dist = torch.distributions.Rayleigh(scale=scale_param)
-            noise = rayleigh_dist.sample(shape) - mean
+            X = torch.randn(shape) * sigma
+            Y = torch.randn(shape) * sigma
+            R = torch.sqrt(X**2 + Y**2)
+            mean = lambda_param * math.sqrt(math.pi / 2.0)
+            noise = R - mean
         # 8.
         elif self.noise_type == "beta":
             alpha, beta = 2.0, 5.0

@@ -11,7 +11,7 @@ model:
   n_positions: 101
 
 training:
-  batch_size: 32
+  batch_size: 64
   curriculum:
     dims:
       start: 5
@@ -19,8 +19,8 @@ training:
       inc: 1
       interval: 2000
     points:
-      start: 6
-      end: 30
+      start: 11
+      end: 41
       inc: 2
       interval: 2000
 
@@ -52,21 +52,21 @@ training:
     # noise_type: normal
   }
 
-  learning_rate: 0.0003
+  learning_rate: 0.0001
   keep_every_steps: 100000
   num_tasks: null
   num_training_examples: null
   resume_id: null
   save_every_steps: 100
-  train_steps: 50001
+  train_steps: 500001
 
 out_dir: 
 
 wandb:
-  project: in-context-training
-  entity: in-context
-  notes: ""
-  name: "example_run"
-  log_every_steps: 10
+    project: "in-context-training"
+    entity: "hai-trinh220970-ho-chi-minh-city-university-of-technology"
+    name: "laplace_weights_experiment"
+    notes: "Training with laplace-distributed weights (non-uniform on hypersphere)"
+    log_every_steps: 100
 
 

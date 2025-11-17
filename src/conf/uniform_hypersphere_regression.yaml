@@ -23,13 +23,13 @@ training:
             inc: 1
             interval: 2000
         points:
-            start: 6
-            end: 30
+            start: 11
+            end: 41
             inc: 2
             interval: 2000
-    batch_size: 32
-    learning_rate: 0.0003
-    train_steps: 50001
+    batch_size: 64
+    learning_rate: 0.0001
+    train_steps: 500001
     save_every_steps: 100
     keep_every_steps: 10000
 

@@ -23,17 +23,17 @@ training:
             inc: 1
             interval: 2000
         points:
-            start: 6
+            start: 11
             end: 41
             inc: 2
             interval: 2000
-    batch_size: 32
-    learning_rate: 0.0002
-    train_steps: 100001
+    batch_size: 64
+    learning_rate: 0.0001
+    train_steps: 500001
     save_every_steps: 100
     keep_every_steps: 10000
 
-out_dir: ../models/laplace_weighted_regression
+out_dir: /content/models/laplace_weighted_regression
 
 wandb:
     project: "in-context-training"
