@@ -819,4 +819,45 @@ class WeightedLeastSquaresModel:
         preds = []
 
         for i in inds:
-            residuals = 
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:, 0]))
+                continue
+
+            train_xs, train_ys = xs[:, :i], ys[:, :i]
+            test_x = xs[:, i : i + 1]
+
+            weights = self._estimate_weights(train_xs, train_ys)
+            sqrt_w = torch.sqrt(torch.clamp(weights, min=1e-8))
+
+            weighted_xs = train_xs * sqrt_w.unsqueeze(-1)
+            weighted_ys = train_ys * sqrt_w
+
+            try:
+                ws, _, _, _ = torch.linalg.lstsq(weighted_xs, weighted_ys.unsqueeze(-1))
+            except torch.linalg.LinAlgError:
+                # fall back to standard OLS if the weighted system is ill-conditioned
+                ws, _, _, _ = torch.linalg.lstsq(train_xs, train_ys.unsqueeze(-1))
+
+            pred = test_x @ ws
+            preds.append(pred[:, 0, 0])
+
+        return torch.stack(preds, dim=1)
+
+    def _estimate_weights(self, train_xs, train_ys):
+        """Return diagonal weights (inverse variances) for WLS."""
+        if self.variance_model == "uniform":
+            return torch.ones_like(train_ys)
+
+        if self.variance_model == "ols_residual":
+            try:
+                ws, _, _, _ = torch.linalg.lstsq(train_xs, train_ys.unsqueeze(-1))
+                preds = (train_xs @ ws).squeeze(-1)
+                residuals = train_ys - preds
+                variances = residuals.pow(2)
+                variances = torch.clamp(variances, min=1e-6)
+                weights = 1.0 / variances
+                return weights
+            except torch.linalg.LinAlgError:
+                return torch.ones_like(train_ys)
+
+        raise ValueError(f"Unknown variance_model '{self.variance_model}' for WLS")
