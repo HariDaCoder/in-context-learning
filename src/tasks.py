@@ -63,6 +63,7 @@ def get_task_sampler(
         "decision_tree": DecisionTree,
         "ar1_linear_regression": AR1LinearRegression,
         "exponential_weighted_regression": ExponentialWeightedRegression,
+        "laplace_weighted_regression": LaplaceWeightedRegression,
     }
 
     if task_name in task_names_to_classes:
@@ -101,7 +102,8 @@ class UniformHypersphereRegression(Task):
 
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)
-        ys_b = self.scale * (xs_b @ w_b)[:, :, 0]
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0] 
+        ys_b = ys_linear + torch.randn_like(ys_linear)
         return ys_b
 
     @staticmethod
@@ -141,7 +143,8 @@ class LaplaceWeightedRegression(Task):
             
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)
-        ys_b = self.scale * (xs_b @ w_b)[:, :, 0]
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0] 
+        ys_b = ys_linear + torch.randn_like(ys_linear)
         return ys_b
 
     @staticmethod
@@ -179,7 +182,8 @@ class ExponentialWeightedRegression(Task):
             self.w_b = pool_dict["w"][indices]
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)
-        ys_b = self.scale * (xs_b @ w_b)[:, :, 0]
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0] 
+        ys_b = ys_linear + torch.randn_like(ys_linear)
         return ys_b
     
     @staticmethod

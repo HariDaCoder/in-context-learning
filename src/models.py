@@ -1,3 +1,4 @@
+from statistics import variance
 import torch
 import torch.nn as nn
 from transformers import GPT2Model, GPT2Config
@@ -137,7 +138,7 @@ class TransformerModel(nn.Module):
         self._read_out = nn.Linear(n_embd, 1)
 
     @staticmethod
-    def _combine(xs_b, ys_b):
+    def _combine(xs_b, ys_b): # Create sequence context by interleaving x's and y's
         """Interleaves the x's and the y's into a single sequence."""
         bsize, points, dim = xs_b.shape
         ys_b_wide = torch.cat(
@@ -513,6 +514,7 @@ class XGBoostModel:
             preds.append(pred)
 
         return torch.stack(preds, dim=1)
+
 class RidgeModel:
     def __init__(self, alpha=1.0):
         """
@@ -800,3 +802,21 @@ class GLSModel:
         indices = torch.arange(n, dtype=torch.float32)
         diff = torch.abs(indices.unsqueeze(0) - indices.unsqueeze(1))
         return torch.pow(ar_coef, diff)
+class WeightedLeastSquaresModel:
+    def __init__(self, variance_model='ols_residual'):
+        """WLS: Heteroscedasticity (V is diagnol matrix)"""
+        self.variance_model = variance_model
+        self.name = f"wls_var_model={variance_model}"
+
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
+
+        preds = []
+
+        for i in inds:
+            residuals = 

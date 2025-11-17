@@ -46,6 +46,7 @@ TASK_LIST = [
     "non_stationary_linear_regression",
     "uniform_hypersphere_regression",
     "exponential_weighted_regression",
+    "laplace_weighted_regression",
 ]
 
 training_schema = {
