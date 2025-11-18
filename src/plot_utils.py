@@ -107,10 +107,12 @@ def basic_plot(metrics, models=None, trivial=1.0):
     ax.set_xlabel("in-context examples")
     ax.set_ylabel("squared error")
     ax.set_xlim(-1, len(low) + 0.1)
-    ax.set_ylim(-0.1, 1.0)
+    ax.set_ylim(-0.1, 2.0)
 
 
-    legend = ax.legend(loc="upper left", bbox_to_anchor=(1, 1))
+    # legend = ax.legend(loc="upper left", bbox_to_anchor=(1, 1))
+    legend = ax.legend(loc="best")
+
     fig.set_size_inches(4, 3)
     for line in legend.get_lines():
         line.set_linewidth(3)

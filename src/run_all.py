@@ -26,7 +26,17 @@ def prepare_out_dir(args):
             yaml.dump(args.__dict__, yaml_file, default_flow_style=False)
 
 
-def run_one_experiment(base_config_path: str, task: str, task_kwargs: dict, data_kwargs: dict, run_name: str, resume_id: str = None, data_type: str = None, train_steps: int = None):
+def run_one_experiment(
+    base_config_path: str,
+    task: str,
+    task_kwargs: dict,
+    data_kwargs: dict,
+    run_name: str,
+    resume_id: str = None,
+    data_type: str = None,
+    train_steps: int = None,
+    sequence_length: int = None,
+):
     """
     Run a single experiment with specified task, task_kwargs, and data_kwargs.
     
@@ -46,16 +56,30 @@ def run_one_experiment(base_config_path: str, task: str, task_kwargs: dict, data
         base_config = yaml.safe_load(f)
 
     # Modify config for this experiment
+    # Ensure training section exists
+    if 'training' not in base_config:
+        base_config['training'] = {}
+    
     base_config['training']['task'] = task
     base_config['training']['task_kwargs'] = task_kwargs
     base_config['training']['data_kwargs'] = data_kwargs
     if data_type is not None:
         base_config['training']['data'] = data_type
-    base_config['wandb']['name'] = run_name
     if resume_id is not None:
         base_config['training']['resume_id'] = resume_id
     if train_steps is not None:
         base_config['training']['train_steps'] = int(train_steps)
+    if sequence_length is not None:
+        curriculum_points = base_config['training'].setdefault('curriculum', {}).setdefault('points', {})
+        curriculum_points['start'] = sequence_length
+        curriculum_points['end'] = sequence_length
+        curriculum_points['inc'] = 0
+        curriculum_points.setdefault('interval', 1)
+    
+    # Ensure wandb section exists
+    if 'wandb' not in base_config:
+        base_config['wandb'] = {}
+    base_config['wandb']['name'] = run_name
 
     # Create temporary config file
     temp_config_file = tempfile.NamedTemporaryFile(
@@ -91,6 +115,9 @@ def run_one_experiment(base_config_path: str, task: str, task_kwargs: dict, data
             print(f"Data type: {data_type}")
         if train_steps is not None:
             print(f"Train steps override: {train_steps}")
+        if sequence_length is not None:
+            print(f"Sequence length override: {sequence_length}")
+
         print(f"{'='*60}\n")
         train_main(args)
 
@@ -106,30 +133,26 @@ def get_default_experiments():
     Returns a list of experiment configs: (task, task_kwargs, data_kwargs, run_name, data_type)
     """
     experiments = []
-    
+
     # ===== Sparse Linear Regression Experiments =====
-    # Sparse w (weight sparsity)
     for sparsity in [3, 5, 7]:
-        experiments.append((
-            "sparse_linear_regression",
-            {"sparsity": sparsity},  # task_kwargs
-            {},  # data_kwargs
-            f"sparse_w_sparsity_{sparsity}",
-            None  # data_type: use default from config
-        ))
-    
-    # Sparse data (data sparsity) - using sparse_gaussian data
+        experiments.append({
+            "task": "sparse_linear_regression",
+            "task_kwargs": {"sparsity": sparsity},
+            "data_kwargs": {},
+            "run_name": f"sparse_w_sparsity_{sparsity}",
+            "data_type": None,
+        })
+
     for data_sparsity in [5, 10, 15]:
-        experiments.append((
-            "sparse_linear_regression",
-            {"sparsity": 3},  # task_kwargs (w sparsity)
-            {"sparsity": data_sparsity},  # data_kwargs (data sparsity)
-            f"sparse_data_sparsity_{data_sparsity}",
-            "sparse_gaussian"  # data_type override
-        ))
-    
-    # ===== Noisy Linear Regression Experiments =====
-    # Different noise types
+        experiments.append({
+            "task": "sparse_linear_regression",
+            "task_kwargs": {"sparsity": 3},
+            "data_kwargs": {"sparsity": data_sparsity},
+            "run_name": f"sparse_data_sparsity_{data_sparsity}",
+            "data_type": "sparse_gaussian",
+        })
+
     noise_types = [
         "normal",
         "uniform",
@@ -141,26 +164,25 @@ def get_default_experiments():
         "beta",
         "poisson",
     ]
-    
+
     for noise_type in noise_types:
-        experiments.append((
-            "noisy_linear_regression",
-            {"noise_type": noise_type, "noise_std": 2.0},  # task_kwargs
-            {},  # data_kwargs
-            f"noisy_{noise_type}",
-            None  # data_type: use default from config
-        ))
-    
-    # Different noise_std values for normal noise
+        experiments.append({
+            "task": "noisy_linear_regression",
+            "task_kwargs": {"noise_type": noise_type, "noise_std": 2.0},
+            "data_kwargs": {},
+            "run_name": f"noisy_{noise_type}",
+            "data_type": None,
+        })
+
     for noise_std in [0.5, 1.0, 2.0, 3.0]:
-        experiments.append((
-            "noisy_linear_regression",
-            {"noise_type": "normal", "noise_std": noise_std},  # task_kwargs
-            {},  # data_kwargs
-            f"noisy_normal_std_{noise_std}",
-            None  # data_type: use default from config
-        ))
-    
+        experiments.append({
+            "task": "noisy_linear_regression",
+            "task_kwargs": {"noise_type": "normal", "noise_std": noise_std},
+            "data_kwargs": {},
+            "run_name": f"noisy_normal_std_{noise_std}",
+            "data_type": None,
+        })
+
     return experiments
 
 
@@ -170,8 +192,8 @@ def build_parser():
     )
     parser.add_argument(
         "--config",
-        default="src/conf/toy.yaml",
-        help="Base config yaml (e.g., src/conf/toy.yaml)",
+        default="src/conf/template.yaml",
+        help="Base config yaml (e.g., src/conf/template.yaml)",
     )
     parser.add_argument(
         "--task",
@@ -232,6 +254,13 @@ def build_parser():
         action="store_true",
         help="Skip runs that already have config.yaml in output directory",
     )
+    parser.add_argument(
+        "--sequence_lengths",
+        nargs="*",
+        type=int,
+        default=[],
+        help="Optional list of sequence lengths (curriculum.n_points) to sweep over",
+    )
     return parser
 
 
@@ -245,53 +274,67 @@ def main():
     if cli_args.task in ["sparse", "both"]:
         # Sparse w experiments (weight sparsity, regular gaussian data)
         for sparsity in cli_args.sparse_w_sparsities:
-            experiments.append((
-                "sparse_linear_regression",
-                {"sparsity": sparsity},
-                {},
-                f"{cli_args.base_run_name}_sparse_w_{sparsity}",
-                None  # data_type: use default from config
-            ))
+            experiments.append({
+                "task": "sparse_linear_regression",
+                "task_kwargs": {"sparsity": sparsity},
+                "data_kwargs": {},
+                "run_name": f"{cli_args.base_run_name}_sparse_w_{sparsity}",
+                "data_type": None,
+            })
         
         # Sparse data experiments (sparse_gaussian data)
         for data_sparsity in cli_args.sparse_data_sparsities:
-            experiments.append((
-                "sparse_linear_regression",
-                {"sparsity": 3},  # w sparsity
-                {"sparsity": data_sparsity},  # data sparsity
-                f"{cli_args.base_run_name}_sparse_data_{data_sparsity}",
-                "sparse_gaussian"  # data_type override
-            ))
+            experiments.append({
+                "task": "sparse_linear_regression",
+                "task_kwargs": {"sparsity": 3},
+                "data_kwargs": {"sparsity": data_sparsity},
+                "run_name": f"{cli_args.base_run_name}_sparse_data_{data_sparsity}",
+                "data_type": "sparse_gaussian",
+            })
     
     if cli_args.task in ["noisy", "both"]:
         # Different noise types
         for noise_type in cli_args.noise_types:
-            experiments.append((
-                "noisy_linear_regression",
-                {"noise_type": noise_type, "noise_std": 2.0},
-                {},
-                f"{cli_args.base_run_name}_noisy_{noise_type}",
-                None  # data_type: use default from config
-            ))
+            experiments.append({
+                "task": "noisy_linear_regression",
+                "task_kwargs": {"noise_type": noise_type, "noise_std": 2.0},
+                "data_kwargs": {},
+                "run_name": f"{cli_args.base_run_name}_noisy_{noise_type}",
+                "data_type": None,
+            })
         
         # Different noise_std for normal noise
         for noise_std in cli_args.noise_stds:
-            experiments.append((
-                "noisy_linear_regression",
-                {"noise_type": "normal", "noise_std": noise_std},
-                {},
-                f"{cli_args.base_run_name}_noisy_normal_std_{noise_std}",
-                None  # data_type: use default from config
-            ))
+            experiments.append({
+                "task": "noisy_linear_regression",
+                "task_kwargs": {"noise_type": "normal", "noise_std": noise_std},
+                "data_kwargs": {},
+                "run_name": f"{cli_args.base_run_name}_noisy_normal_std_{noise_std}",
+                "data_type": None,
+            })
     
     if cli_args.task == "custom":
-        # Use default experiments
         default_experiments = get_default_experiments()
-        # Add base_run_name prefix
         experiments = [
-            (task, tk, dk, f"{cli_args.base_run_name}_{name}", dt)
-            for task, tk, dk, name, dt in default_experiments
+            {
+                "task": exp["task"],
+                "task_kwargs": exp["task_kwargs"],
+                "data_kwargs": exp["data_kwargs"],
+                "run_name": f"{cli_args.base_run_name}_{exp['run_name']}",
+                "data_type": exp["data_type"],
+            }
+            for exp in default_experiments
         ]
+
+    if cli_args.sequence_lengths:
+        expanded_experiments = []
+        for exp in experiments:
+            for seq_len in cli_args.sequence_lengths:
+                new_exp = dict(exp)
+                new_exp["sequence_length"] = seq_len
+                new_exp["run_name"] = f"{exp['run_name']}_seq_{seq_len}"
+                expanded_experiments.append(new_exp)
+        experiments = expanded_experiments
     
     # Run experiments
     print(f"\n{'='*60}")
@@ -299,20 +342,24 @@ def main():
     print(f"{'='*60}\n")
     
     for idx, exp in enumerate(experiments, 1):
-        # Handle both 4-tuple and 5-tuple formats
-        if len(exp) == 4:
-            task, task_kwargs, data_kwargs, run_name = exp
-            data_type = None
-        else:
-            task, task_kwargs, data_kwargs, run_name, data_type = exp
-        
+        task = exp["task"]
+        task_kwargs = exp["task_kwargs"]
+        data_kwargs = exp["data_kwargs"]
+        run_name = exp["run_name"]
+        data_type = exp.get("data_type")
+        sequence_length = exp.get("sequence_length")
+
         print(f"\n[{idx}/{len(experiments)}] Preparing: {run_name}")
         
         # Check if should skip existing
         if cli_args.skip_existing:
             # Try to find existing run by checking base out_dir
-            base_config = yaml.safe_load(open(cli_args.config))
+            with open(cli_args.config, 'r') as f:
+                base_config = yaml.safe_load(f)
             base_out_dir = base_config.get('out_dir', '../models')
+            # Handle empty out_dir
+            if not base_out_dir or base_out_dir.strip() == '':
+                base_out_dir = '../models'
             # Check if any subdirectory has this run_name in config
             if os.path.exists(base_out_dir):
                 task_dir = os.path.join(base_out_dir, task)
@@ -339,7 +386,8 @@ def main():
                 run_name,
                 resume_id=resume_id,
                 data_type=data_type,
-                train_steps=cli_args.train_steps
+                train_steps=cli_args.train_steps,
+                sequence_length=sequence_length,
             )
         except Exception as e:
             print(f"\n{'!'*60}")
