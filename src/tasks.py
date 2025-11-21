@@ -64,7 +64,7 @@ def get_task_sampler(
         "ar1_linear_regression": AR1LinearRegression,
         "exponential_weighted_regression": ExponentialWeightedRegression,
         "laplace_weighted_regression": LaplaceWeightedRegression,
-        "wlaplace_noisypoisson": WlaplaceNoisypoisson,
+        "wlaplace_noisypoisson": wlaplace_noisypoisson,
     }
 
     if task_name in task_names_to_classes:
@@ -162,7 +162,7 @@ class LaplaceWeightedRegression(Task):
         return mean_squared_error
 
 
-class WlaplaceNoisypoisson(Task):
+class wlaplace_noisypoisson(Task):
     def __init__(
         self,
         n_dims,
@@ -177,7 +177,7 @@ class WlaplaceNoisypoisson(Task):
         Task with Laplace-distributed weights, expects exponential-like inputs,
         and adds centered Poisson noise to the supervision.
         """
-        super(WlaplaceNoisypoisson, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        super(wlaplace_noisypoisson, self).__init__(n_dims, batch_size, pool_dict, seeds)
         self.scale = scale
         self.weight_scale = weight_scale
         self.poisson_rate = float(poisson_rate)

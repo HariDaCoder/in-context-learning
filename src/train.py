@@ -80,6 +80,7 @@ def _sanitize_training_kwargs(args):
         "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform"},
         "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
         "uniform_hypersphere_regression": {"scale"},
+        "wlaplace_noisypoisson": {"scale", "weight_scale", "poisson_rate"},
     }
 
     task_name = args.training.task
