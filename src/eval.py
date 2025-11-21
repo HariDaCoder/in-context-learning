@@ -237,6 +237,7 @@ def build_evals(conf):
         "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
         "uniform_hypersphere_regression": {"scale"},
     }
+    original_data_kwargs = conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {}
     original_task_kwargs = conf.training.task_kwargs if hasattr(conf.training, "task_kwargs") else {}
     cleaned_data_kwargs = {k: v for k, v in (original_data_kwargs or {}).items() if k in data_whitelist.get(data_name, set())}
     cleaned_task_kwargs = {k: v for k, v in (original_task_kwargs or {}).items() if k in task_whitelist.get(task_name, set())}
