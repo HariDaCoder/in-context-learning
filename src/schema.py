@@ -47,6 +47,7 @@ TASK_LIST = [
     "uniform_hypersphere_regression",
     "exponential_weighted_regression",
     "laplace_weighted_regression",
+    "wlaplace_noisypoisson",
 ]
 
 training_schema = {

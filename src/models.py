@@ -29,6 +29,10 @@ def build_model(conf):
 
 def get_relevant_baselines(task_name):
     task_to_baselines = {
+        "WlaplaceNoisypoisson": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
         "laplace_weighted_regression": [
             (LeastSquaresModel, {}),
             (RidgeModel, {"alpha": 0.5}),

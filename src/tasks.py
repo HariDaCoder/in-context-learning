@@ -64,6 +64,7 @@ def get_task_sampler(
         "ar1_linear_regression": AR1LinearRegression,
         "exponential_weighted_regression": ExponentialWeightedRegression,
         "laplace_weighted_regression": LaplaceWeightedRegression,
+        "wlaplace_noisypoisson": WlaplaceNoisypoisson,
     }
 
     if task_name in task_names_to_classes:
@@ -150,6 +151,65 @@ class LaplaceWeightedRegression(Task):
     @staticmethod
     def generate_pool_dict(n_dims, num_tasks, weight_scale=1.0):
         laplace_dist = torch.distributions.Laplace(loc=0, scale=weight_scale)
+        return {"w": laplace_dist.sample((num_tasks, n_dims, 1))}
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+
+class WlaplaceNoisypoisson(Task):
+    def __init__(
+        self,
+        n_dims,
+        batch_size,
+        pool_dict=None,
+        seeds=None,
+        scale=1.0,
+        weight_scale=1.0,
+        poisson_rate=3.0,
+    ):
+        """
+        Task with Laplace-distributed weights, expects exponential-like inputs,
+        and adds centered Poisson noise to the supervision.
+        """
+        super(WlaplaceNoisypoisson, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        self.weight_scale = weight_scale
+        self.poisson_rate = float(poisson_rate)
+
+        if pool_dict is None and seeds is None:
+            laplace_dist = torch.distributions.Laplace(loc=0.0, scale=self.weight_scale)
+            self.w_b = laplace_dist.sample((self.b_size, self.n_dims, 1))
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            assert len(seeds) == self.b_size
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                laplace_dist = torch.distributions.Laplace(loc=0.0, scale=self.weight_scale)
+                self.w_b[i] = laplace_dist.sample((self.n_dims, 1))
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0]
+
+        poisson = torch.distributions.Poisson(rate=self.poisson_rate)
+        noise = poisson.sample(ys_linear.shape) - self.poisson_rate
+        noise = noise.to(xs_b.device)
+        return ys_linear + noise
+
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, weight_scale=1.0):
+        laplace_dist = torch.distributions.Laplace(loc=0.0, scale=weight_scale)
         return {"w": laplace_dist.sample((num_tasks, n_dims, 1))}
 
     @staticmethod
