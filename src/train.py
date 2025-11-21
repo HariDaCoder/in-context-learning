@@ -56,6 +56,10 @@ def _sanitize_training_kwargs(args):
         "ar2": {"ar1_coef", "ar2_coef", "noise_std", "bias", "scale"},
         "vr2": {"ar1_mat", "ar2_mat", "noise_std", "bias", "scale"},
         "nonstation": {"coef_base", "coef_amplitude", "noise_std", "bias", "scale"},
+        "exponential": {"bias", "scale", "rate"},
+        "laplace": {"bias", "scale", "loc", "laplace_scale"},
+        "gamma": {"bias", "scale", "concentration", "rate"},
+        "beta": {"bias", "scale", "alpha", "beta"},
     }
 
     data_name = args.training.data

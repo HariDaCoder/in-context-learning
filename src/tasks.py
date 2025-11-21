@@ -237,7 +237,6 @@ class LinearRegression(Task):
     def get_training_metric():
         return mean_squared_error
 
-
 class SparseLinearRegression(LinearRegression):
     def __init__(
         self,

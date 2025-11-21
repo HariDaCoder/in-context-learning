@@ -1,3 +1,4 @@
+import enum
 import math
 
 import torch
@@ -20,6 +21,10 @@ def get_data_sampler(data_name, n_dims, **kwargs):
         "ar2":AR2Sampler,
         "vr2":VR2Sampler,
         "nonstation":NonStationarySampler,
+        "exponential": ExponentialSampler,
+        "laplace": LaplaceSampler,
+        "gamma": GammaSampler,
+        "beta": BetaSampler,
     }
     if data_name in names_to_classes:
         sampler_cls = names_to_classes[data_name]
@@ -43,6 +48,84 @@ def sample_transformation(eigenvalues, normalize=False):
         norm_subspace = torch.sum(eigenvalues**2)
         t *= math.sqrt(n_dims / norm_subspace)
     return t
+
+def _sample_distribution(dist, b_size, inner_shape, seeds=None):
+    sample_shape = (b_size, *inner_shape)
+    if seeds is None:
+        return dist.sample(sample_shape)
+
+    assert len(seeds) == b_size
+    template = dist.mean
+    xs_b = torch.empty(sample_shape, dtype=template.dtype, device=template.device)
+    for i, seed in enumerate(seeds):
+        with torch.random.fork_rng():
+            torch.manual_seed(int(seed))
+            xs_b[i] = dist.sample(inner_shape)
+    return xs_b
+
+
+class ExponentialSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, rate=1.0):
+        super().__init__(n_dims)
+        self.bias = bias
+        self.scale = scale
+        self.rate = float(rate)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        exp_dist = torch.distributions.Exponential(rate=self.rate)
+        xs_b = _sample_distribution(exp_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
+
+class LaplaceSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, loc=0.0, laplace_scale=1.0):
+        super().__init__(n_dims)
+        self.bias = bias
+        self.scale = scale
+        self.loc = float(loc)
+        self.laplace_scale = float(laplace_scale)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        laplace_dist = torch.distributions.Laplace(loc=self.loc, scale=self.laplace_scale)
+        xs_b = _sample_distribution(laplace_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
+
+class GammaSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, concentration=2.0, rate=1.0):
+        super().__init__(n_dims)
+        if concentration <= 0 or rate <= 0:
+            raise ValueError("concentration and rate must be positive for Gamma distribution.")
+        self.bias = bias
+        self.scale = scale
+        self.concentration = float(concentration)
+        self.rate = float(rate)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        gamma_dist = torch.distributions.Gamma(concentration=self.concentration, rate=self.rate)
+        xs_b = _sample_distribution(gamma_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
 
 
 class GaussianSampler(DataSampler):
@@ -69,6 +152,28 @@ class GaussianSampler(DataSampler):
             xs_b[:, :, n_dims_truncated:] = 0
         return xs_b
 
+
+class BetaSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, alpha=2.0, beta=5.0):
+        super().__init__(n_dims)
+        if alpha <= 0 or beta <= 0:
+            raise ValueError("alpha and beta must be positive for Beta distribution.")
+        self.bias = bias
+        self.scale = scale
+        self.alpha = float(alpha)
+        self.beta = float(beta)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        beta_dist = torch.distributions.Beta(concentration1=self.alpha, concentration0=self.beta)
+        xs_b = _sample_distribution(beta_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
 # code này là thêm:
 class SparseGaussianSampler(DataSampler):
     def __init__(self, n_dims, k, bias=None, scale=None):

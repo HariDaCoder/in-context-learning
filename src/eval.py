@@ -222,6 +222,10 @@ def build_evals(conf):
         "ar2": {"ar1_coef", "ar2_coef", "noise_std", "bias", "scale"},
         "vr2": {"ar1_mat", "ar2_mat", "noise_std", "bias", "scale"},
         "nonstation": {"coef_base", "coef_amplitude", "noise_std", "bias", "scale"},
+        "exponential": {"bias", "scale", "rate"},
+        "laplace": {"bias", "scale", "loc", "laplace_scale"},
+        "gamma": {"bias", "scale", "concentration", "rate"},
+        "beta": {"bias", "scale", "alpha", "beta"},
     }
     task_whitelist = {
         "linear_regression": {"scale", "uniform"},
@@ -233,7 +237,6 @@ def build_evals(conf):
         "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
         "uniform_hypersphere_regression": {"scale"},
     }
-    original_data_kwargs = conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {}
     original_task_kwargs = conf.training.task_kwargs if hasattr(conf.training, "task_kwargs") else {}
     cleaned_data_kwargs = {k: v for k, v in (original_data_kwargs or {}).items() if k in data_whitelist.get(data_name, set())}
     cleaned_task_kwargs = {k: v for k, v in (original_task_kwargs or {}).items() if k in task_whitelist.get(task_name, set())}
