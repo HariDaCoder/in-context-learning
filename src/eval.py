@@ -437,6 +437,16 @@ def baseline_names(name):
     if "gls_ar" in name:
         ar = name.split("ar=")[1]
         return f"GLS (ar={ar})"
+    
+    if "LAD_L1_Regression" in name or name == "LAD_L1_Regression":
+        return "LAD (L1 Regression)"
+    
+    if "Huber_Regression" in name:
+        epsilon = name.split("epsilon=")[1] if "epsilon=" in name else "1.35"
+        return f"Huber Regression (ε={epsilon})"
+    
+    if "Cauchy_MLE" in name or name == "Cauchy_MLE":
+        return "Cauchy MLE"
 
     return name
 

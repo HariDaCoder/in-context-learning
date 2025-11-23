@@ -366,7 +366,7 @@ class NoisyLinearRegression(LinearRegression):
         scale=1,
         noise_std=2.0,
         renormalize_ys=False,
-        noise_type="normal",  # "normal", "uniform", "laplace", "t-student", "cauchy", "exponential", "rayleigh", "beta", "poisson"        
+        noise_type="cauchy",  # "normal", "uniform", "laplace", "t-student", "cauchy", "exponential", "rayleigh", "beta", "poisson"        
         uniform=False,
     ):
         super(NoisyLinearRegression, self).__init__(
@@ -397,7 +397,7 @@ class NoisyLinearRegression(LinearRegression):
             noise = t_dist.sample(shape)
         # 5.
         elif self.noise_type == "cauchy":
-            scale_param = self.noise_std * 0.5 
+            scale_param = self.noise_std 
             cauchy_dist = torch.distributions.StudentT(df=1, loc=0, scale=scale_param)
             noise = cauchy_dist.sample(shape)   
         # 6.

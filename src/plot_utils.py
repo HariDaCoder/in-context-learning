@@ -40,6 +40,9 @@ relevant_model_names = {
         "Ridge Var Adj (alpha=0.5, ar=0.5)",
         "Feasible GLS", 
         "GLS (ar=0.5)",
+        "LAD (L1 Regression)",
+        "Huber Regression (ε=1.35)",
+        "Cauchy MLE",
     ],
     "linear_regression": [
         "Transformer", 
