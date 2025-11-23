@@ -40,7 +40,7 @@ training:
   #         relu_2nn_regression, decision_tree, noisy_linear_regression,
   #         ar1_linear_regression, ar2_linear_regression, non_stationary_linear_regression,
   #         uniform_hypersphere_regression
-  task: linear_regression
+  task: noisy_linear_regression
 
   # Task kwargs:
   # - When task == 'sparse_linear_regression': you may set 'sparsity'.
@@ -49,23 +49,23 @@ training:
     # sparsity: 5  # only when task: sparse_linear_regression
     # noise_std: 2.0      # e.g., for noisy_linear_regression
     # renormalize_ys: false
-    # noise_type: normal
+    noise_type: cauchy
   }
 
   learning_rate: 0.0001
-  keep_every_steps: 100000
+  keep_every_steps: 10000
   num_tasks: null
   num_training_examples: null
   resume_id: null
   save_every_steps: 100
-  train_steps: 500001
+  train_steps: 5001
 
 out_dir: 
 
 wandb:
     project: "in-context-training"
     entity: "hai-trinh220970-ho-chi-minh-city-university-of-technology"
-    name: "laplace_weights_experiment"
+    name: "test"
     notes: "Training with laplace-distributed weights (non-uniform on hypersphere)"
     log_every_steps: 100
 

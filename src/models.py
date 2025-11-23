@@ -871,193 +871,196 @@ class WeightedLeastSquaresModel:
         raise ValueError(f"Unknown variance_model '{self.variance_model}' for WLS")
 
 
-    class LADModel:
+class LADModel:
+    """
+    Least Absolute Deviations (L1 Regression) - Minimize Mean Absolute Error (MAE)
+    """
+
+    def __init__(self, max_iter=1000, tol=1e-3):
+        self.max_iter = max_iter
+        self.tol = tol
+        self.name = "LAD_L1_Regression"
+
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
+
+        preds = []
+
+        for i in inds:
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:,0]))
+                continue
+            train_xs, train_ys = xs[:, :i], ys[:, :i]
+            test_x = xs[:, i : i + 1]
+
+            pred = torch.zeros_like(ys[:,0])
+            for j in range(ys.shape[0]):
+                x_j, y_j = train_xs[j], train_ys[j]
+
+                clf = SGDRegressor(
+                    loss='epsilon_insensitive',
+                    epsilon=0.0,
+                    max_iter=self.max_iter,
+                    tol=self.tol,
+                    fit_intercept=False,
+                    random_state=42
+                )
+
+                try:
+                    clf.fit(x_j.numpy(), y_j.numpy())
+                    w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
+                    y_pred = (test_x[j] @ w_pred.float()).squeeze(1)
+                    pred[j] = y_pred[0]
+                except Exception as e:
+                    # Fallback to median if LAD fails
+                    pred[j] = torch.median(y_j)
+            preds.append(pred)
+
+        return torch.stack(preds, dim=1)
+
+
+class HuberRegressionModel:
+    """
+    Huber Regression - Baseline "Hybrid" between L2 and L1.
+    """
+
+    def __init__(self, epsilon=1.35, max_iter=300, alpha=0.0001):
         """
-        Least Absolute Deviations (L1 Regression) - Minimize Mean Absolute Error (MAE)
+        epsilon: threshold for Huber loss
+        alpha: regularization strength
         """
+        self.epsilon = epsilon
+        self.max_iter = max_iter
+        self.alpha = alpha
+        self.name = f"Huber_Regression_epsilon={epsilon}"
 
-        def __init__(self, max_iter=1000, tol=1e-3):
-            self.max_iter = max_iter
-            self.tol = tol
-            self.name = "LAD_L1_Regression"
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
+        
+        preds = []
 
-        def __call__(self, xs, ys, inds=None):
-            xs, ys = xs.cpu(), ys.cpu()
-            if inds is None:
-                inds = range(ys.shape[1])
-            else:
-                if max(inds) >= ys.shape[1] or min(inds) < 0:
-                    raise ValueError("inds contain indices where xs and ys are not defined")
+        for i in inds:
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:,0]))
+                continue
+            train_xs, train_ys = xs[:, :i], ys[:, :i]
+            test_x = xs[:, i : i + 1]
 
-            preds = []
+            pred = torch.zeros_like(ys[:,0])
+            for j in range(ys.shape[0]):
+                x_j, y_j = train_xs[j], train_ys[j]
 
-            for i in inds:
-                if i == 0:
-                    preds.append(torch.zeros_like(ys[:,0]))
-                    continue
-                train_xs, train_ys = xs[:, :i], ys[:, :i]
-                test_x = xs[:, i : i + 1]
+                clf = HuberRegressor(
+                    epsilon=self.epsilon,
+                    max_iter=self.max_iter,
+                    alpha=self.alpha,
+                    fit_intercept=False
+                )
 
-                pred = torch.zeros_like(ys[:,0])
-                for j in range(ys.shape[0]):
-                    x_j, y_j = train_xs[j], train_ys[j]
-
-                    clf = SGDRegressor(
-                        loss='epsilon_insensitive',
-                        epsilon=0.0,
-                        max_iter=self.max_iter,
-                        tol=self.tol,
-                        fit_intercept=False,
-                        random_state=42
-                    )
-
+                try:
+                    clf.fit(x_j.numpy(), y_j.numpy())
+                    w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
+                    y_pred = (test_x[j] @ w_pred.float()).squeeze(1)
+                    pred[j] = y_pred[0]
+                except Exception as e:
+                    # Fallback to OLS
                     try:
-                        clf.fit(x_j.numpy(), y_j.numpy())
-                        w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
-                        y_pred = (test_x[j] @ w_pred.float()).squeeze(1)
+                        ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
+                        y_pred = (test_x[j] @ ws).squeeze()
                         pred[j] = y_pred[0]
-                    except Exception as e:
-                        # Fallback to median if LAD fails
+                    except:
                         pred[j] = torch.median(y_j)
-                preds.append(pred)
+            preds.append(pred)
+        return torch.stack(preds, dim=1)
 
-            return torch.stack(preds, dim=1)
 
-    class HuberRegressionModel:
+class CauchyMLEModel:
+    """
+    Maximum Likelihood Estimation for Cauchy noise.
+    Minimize negative log-likelihood: sum ln(1 + (y_i - w x_i)^2)
+    """
+
+    def __init__(self, max_iter=100, lr=0.01, init_from_lad=True):
         """
-        Huber Regression - Baseline "Hybrid" between L2 and L1.
+        max_iter: maximum number of iterations
+        lr: learning rate for gradient descent
+        init_from_lad: initialize from LAD solution (recommended)
         """
+        self.max_iter = max_iter
+        self.lr = lr
+        self.init_from_lad = init_from_lad
+        self.name = "Cauchy_MLE"
 
-        def __init__(self, epsilon=1.35, max_iter=300, alpha=0.0001):
-            """
-            epsilon: threshold for Huber loss
-            alpha: regularization strength
-            """
-            self.epsilon = epsilon
-            self.max_iter = max_iter
-            self.alpha = alpha
-            self.name = f"Huber_Regression_epsilon={epsilon}"
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
 
-        def __call__(self, xs, ys, inds=None):
-            xs, ys = xs.cpu(), ys.cpu()
-            if inds is None:
-                inds = range(ys.shape[1])
-            else:
-                if max(inds) >= ys.shape[1] or min(inds) < 0:
-                    raise ValueError("inds contain indices where xs and ys are not defined")
-            
-            preds = []
+        preds = []
 
-            for i in inds:
-                if i == 0:
-                    preds.append(torch.zeros_like(ys[:,0]))
-                    continue
-                train_xs, train_ys = xs[:, :i], ys[:, :i]
-                test_x = xs[:, i : i + 1]
+        for i in inds:
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:,0]))
+                continue
+            train_xs, train_ys = xs[:, :i], ys[:, :i]
+            test_x = xs[:, i : i + 1]
 
-                pred = torch.zeros_like(ys[:,0])
-                for j in range(ys.shape[0]):
-                    x_j, y_j = train_xs[j], train_ys[j]
+            pred = torch.zeros_like(ys[:,0])
+            for j in range(ys.shape[0]):
+                x_j, y_j = train_xs[j], train_ys[j]
 
-                    clf = HuberRegressor(
-                        epsilon=self.epsilon,
-                        max_iter=self.max_iter,
-                        alpha=self.alpha,
-                        fit_intercept=False
-                    )
-
-                    try:
-                        clf.fit(x_j.numpy(), y_j.numpy())
-                        w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
-                        y_pred = (test_x[j] @ w_pred.float()).squeeze(1)
-                        pred[j] = y_pred[0]
-                    except Exception as e:
-                        # Fallback to OLS
+                try:
+                    if self.init_from_lad:
                         try:
-                            ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
-                            y_pred = (test_x[j] @ ws).squeeze()
-                            pred[j] = y_pred[0]
+                            clf = SGDRegressor(
+                                loss='epsilon_insensitive',
+                                epsilon=0.0,
+                                max_iter=100,
+                                fit_intercept=False,
+                                random_state=42
+                            )
+                            clf.fit(x_j.numpy(), y_j.numpy())
+                            w_init = torch.from_numpy(clf.coef_).float()
                         except:
-                            pred[j] = torch.median(y_j)
-                preds.append(pred)
-            return torch.stack(preds, dim=1)
-
-    class CauchyMLEModel:
-        """
-        Maximum Likelihood Estimation for Cauchy noise.
-        Minimize negative log-likelihood: sum ln(1 + (y_i - w x_i)^2)
-        """
-
-        def __init__(self, max_iter=100, lr=0.01, init_from_lad=True):
-            """
-            max_iter: maximum number of iterations
-            lr: learning rate for gradient descent
-            init_from_lad: initialize from LAD solution (recommended)
-            """
-            self.max_iter = max_iter
-            self.lr = lr
-            self.init_from_lad = init_from_lad
-            self.name = "Cauchy_MLE"
-
-        def __call__(self, xs, ys, inds=None):
-            xs, ys = xs.cpu(), ys.cpu()
-            if inds is None:
-                inds = range(ys.shape[1])
-            else:
-                if max(inds) >= ys.shape[1] or min(inds) < 0:
-                    raise ValueError("inds contain indices where xs and ys are not defined")
-
-            preds = []
-
-            for i in inds:
-                if i == 0:
-                    preds.append(torch.zeros_like(ys[:,0]))
-                    continue
-                train_xs, train_ys = xs[:, :i], ys[:, :i]
-
-                pred = torch.zeros_like(ys[:,0])
-                for j in range(ys.shape[0]):
-                    x_j, y_j = train_xs[j], train_ys[j]
-
-                    try:
-                        if self.init_from_lad:
-                            try:
-                                clf = SGDRegressor(
-                                    loss='epsilon_insensitive',
-                                    epsilon=0.0,
-                                    max_iter=100,
-                                    fit_intercept=False,
-                                    random_state=42
-                                )
-                                clf.fit(x_j.numpy(), y_j.numpy())
-                                w_init = torch.from_numpy(clf.coef_).float()
-                            except:
-                                # Fallback to OLS
-                                ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
-                                w_init = ws.squeeze()
-                        else:
+                            # Fallback to OLS
                             ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
                             w_init = ws.squeeze()
-                        # Optimize Cauchy MLE loss: sum ln(1 + (y - Xw)^2)
-                        w = w_init.clone().requires_grad_(True)
-                        optimizer = torch.optim.Adam([w], lr=self.lr)
+                    else:
+                        ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
+                        w_init = ws.squeeze()
+                    # Optimize Cauchy MLE loss: sum ln(1 + (y - Xw)^2)
+                    w = w_init.clone().requires_grad_(True)
+                    optimizer = torch.optim.Adam([w], lr=self.lr)
 
-                        for _ in range(self.max_iter):
-                            optimizer.zero_grad()
-                            residuals = y_j - (x_j @ w)
-                            # Negative log-likelihood cho Cauchy: sum ln(1 + r^2)
-                            loss = torch.sum(torch.log(1 + residuals ** 2))
-                            loss.backward()
-                            optimizer.step()
+                    for _ in range(self.max_iter):
+                        optimizer.zero_grad()
+                        residuals = y_j - (x_j @ w)
+                        # Negative log-likelihood cho Cauchy: sum ln(1 + r^2)
+                        loss = torch.sum(torch.log(1 + residuals ** 2))
+                        loss.backward()
+                        optimizer.step()
 
-                        # Predict
-                        w_final = w.detach().unsqueeze(1)
-                        y_pred = (test_x[j] @ w_final).squeeze(1)
-                        pred[j] = y_pred[0]
-                    
-                    except Exception as e:
-                        # Fallback to median
-                        pred[j] = torch.median(y_j)
-                preds.append(pred)
-            return torch.stack(preds, dim=1)
+                    # Predict
+                    w_final = w.detach().unsqueeze(1)
+                    y_pred = (test_x[j] @ w_final).squeeze(1)
+                    pred[j] = y_pred[0]
+                
+                except Exception as e:
+                    # Fallback to median
+                    pred[j] = torch.median(y_j)
+            preds.append(pred)
+        return torch.stack(preds, dim=1)
                         
