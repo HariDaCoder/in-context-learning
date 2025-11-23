@@ -876,7 +876,7 @@ class LADModel:
     Least Absolute Deviations (L1 Regression) - Minimize Mean Absolute Error (MAE)
     """
 
-    def __init__(self, max_iter=1000, tol=1e-3):
+    def __init__(self, max_iter=5000, tol=1e-4):
         self.max_iter = max_iter
         self.tol = tol
         self.name = "LAD_L1_Regression"
@@ -929,7 +929,7 @@ class HuberRegressionModel:
     Huber Regression - Baseline "Hybrid" between L2 and L1.
     """
 
-    def __init__(self, epsilon=1.35, max_iter=300, alpha=0.0001):
+    def __init__(self, epsilon=1.35, max_iter=1000, alpha=0.0001):
         """
         epsilon: threshold for Huber loss
         alpha: regularization strength
@@ -988,9 +988,10 @@ class CauchyMLEModel:
     """
     Maximum Likelihood Estimation for Cauchy noise.
     Minimize negative log-likelihood: sum ln(1 + (y_i - w x_i)^2)
+    Vectorized version for batch processing - much faster than loop-based approach.
     """
 
-    def __init__(self, max_iter=100, lr=0.01, init_from_lad=True):
+    def __init__(self, max_iter=200, lr=0.01, init_from_lad=True):
         """
         max_iter: maximum number of iterations
         lr: learning rate for gradient descent
@@ -1015,52 +1016,82 @@ class CauchyMLEModel:
             if i == 0:
                 preds.append(torch.zeros_like(ys[:,0]))
                 continue
-            train_xs, train_ys = xs[:, :i], ys[:, :i]
-            test_x = xs[:, i : i + 1]
+            train_xs, train_ys = xs[:, :i], ys[:, :i]  # [batch_size, i, n_dims], [batch_size, i]
+            test_x = xs[:, i : i + 1]  # [batch_size, 1, n_dims]
 
-            pred = torch.zeros_like(ys[:,0])
-            for j in range(ys.shape[0]):
-                x_j, y_j = train_xs[j], train_ys[j]
+            batch_size = train_xs.shape[0]
+            n_dims = train_xs.shape[2]
 
-                try:
-                    if self.init_from_lad:
-                        try:
-                            clf = SGDRegressor(
-                                loss='epsilon_insensitive',
-                                epsilon=0.0,
-                                max_iter=100,
-                                fit_intercept=False,
-                                random_state=42
-                            )
-                            clf.fit(x_j.numpy(), y_j.numpy())
-                            w_init = torch.from_numpy(clf.coef_).float()
-                        except:
-                            # Fallback to OLS
-                            ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
-                            w_init = ws.squeeze()
-                    else:
-                        ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
-                        w_init = ws.squeeze()
-                    # Optimize Cauchy MLE loss: sum ln(1 + (y - Xw)^2)
-                    w = w_init.clone().requires_grad_(True)
-                    optimizer = torch.optim.Adam([w], lr=self.lr)
-
-                    for _ in range(self.max_iter):
-                        optimizer.zero_grad()
-                        residuals = y_j - (x_j @ w)
-                        # Negative log-likelihood cho Cauchy: sum ln(1 + r^2)
-                        loss = torch.sum(torch.log(1 + residuals ** 2))
-                        loss.backward()
-                        optimizer.step()
-
-                    # Predict
-                    w_final = w.detach().unsqueeze(1)
-                    y_pred = (test_x[j] @ w_final).squeeze(1)
-                    pred[j] = y_pred[0]
+            # Vectorized initialization: compute OLS for all batches at once
+            try:
+                # Try to solve OLS for all batches simultaneously
+                # train_xs: [batch_size, i, n_dims]
+                # train_ys: [batch_size, i]
+                # We need to solve X @ w = y for each batch
                 
-                except Exception as e:
-                    # Fallback to median
-                    pred[j] = torch.median(y_j)
+                # Initialize weights: [batch_size, n_dims]
+                w_init = torch.zeros(batch_size, n_dims, dtype=torch.float32)
+                
+                # Compute OLS for each batch (can't fully vectorize due to different i values)
+                # But we can still optimize by using batched operations where possible
+                for j in range(batch_size):
+                    x_j = train_xs[j]  # [i, n_dims]
+                    y_j = train_ys[j]  # [i]
+                    
+                    try:
+                        if self.init_from_lad:
+                            # Try LAD initialization (still need sklearn for this)
+                            try:
+                                clf = SGDRegressor(
+                                    loss='epsilon_insensitive',
+                                    epsilon=0.0,
+                                    max_iter=500,
+                                    tol=1e-4,
+                                    fit_intercept=False,
+                                    random_state=42
+                                )
+                                clf.fit(x_j.numpy(), y_j.numpy())
+                                w_init[j] = torch.from_numpy(clf.coef_).float()
+                            except:
+                                # Fallback to OLS
+                                ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
+                                w_init[j] = ws.squeeze()
+                        else:
+                            ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
+                            w_init[j] = ws.squeeze()
+                    except:
+                        # If all fails, use zero initialization
+                        w_init[j] = torch.zeros(n_dims)
+                
+                # Vectorized optimization: optimize all batches simultaneously
+                w = w_init.clone().requires_grad_(True)
+                optimizer = torch.optim.Adam([w], lr=self.lr)
+
+                for _ in range(self.max_iter):
+                    optimizer.zero_grad()
+                    
+                    # Vectorized computation: [batch_size, i] = [batch_size, i] - [batch_size, i, n_dims] @ [batch_size, n_dims, 1]
+                    # Use einsum for efficient batched matrix multiplication
+                    predictions = torch.einsum('bij,bj->bi', train_xs, w)  # [batch_size, i]
+                    residuals = train_ys - predictions  # [batch_size, i]
+                    
+                    # Negative log-likelihood for Cauchy: sum over i dimension
+                    # loss per batch: [batch_size]
+                    loss_per_batch = torch.sum(torch.log(1 + residuals ** 2), dim=1)
+                    total_loss = torch.sum(loss_per_batch)  # scalar
+                    
+                    total_loss.backward()
+                    optimizer.step()
+
+                # Vectorized prediction: [batch_size, 1, n_dims] @ [batch_size, n_dims, 1] -> [batch_size, 1, 1]
+                w_final = w.detach()  # [batch_size, n_dims]
+                pred = torch.einsum('bij,bj->bi', test_x, w_final).squeeze(1)  # [batch_size]
+                
+            except Exception as e:
+                # Fallback: use median for each batch
+                pred = torch.median(train_ys, dim=1)[0]  # [batch_size]
+            
             preds.append(pred)
+        
         return torch.stack(preds, dim=1)
                         
