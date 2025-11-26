@@ -48,6 +48,11 @@ TASK_LIST = [
     "exponential_weighted_regression",
     "laplace_weighted_regression",
     "wlaplace_noisypoisson",
+    "sparse_regression_killer",
+    "heavy_tail_noise_killer",
+    "bounded_support_killer",
+    "mixture_tasks_killer",
+    "transfer_tradeoff_task",
 ]
 
 training_schema = {
