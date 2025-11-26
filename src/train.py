@@ -117,16 +117,13 @@ def train(model, args):
 
     n_dims = model.n_dims
     bsize = args.training.batch_size
-
-    # Sanitize kwargs before constructing samplers/tasks to prevent conflicts
-    _sanitize_training_kwargs(args)
-
     data_sampler = get_data_sampler(args.training.data, n_dims=n_dims, **args.training.data_kwargs)
     task_sampler = get_task_sampler(
-        args.training.task, 
-        n_dims=n_dims,
-        batch_size=args.training.batch_size,
-        **args.training.task_kwargs
+        args.training.task,
+        n_dims,
+        bsize,
+        num_tasks=args.training.num_tasks,
+        **args.training.task_kwargs,
     )
     pbar = tqdm(range(starting_step, args.training.train_steps))
 
@@ -136,21 +133,21 @@ def train(model, args):
         data_sampler_args = {}
         task_sampler_args = {}
 
-        if "sparse" in args.training.task:
-            task_sampler_args["valid_coords"] = curriculum.n_dims_truncated
         if num_training_examples is not None:
             assert num_training_examples >= bsize
             seeds = sample_seeds(num_training_examples, bsize)
             data_sampler_args["seeds"] = seeds
-            task_sampler_args["seeds"] = [s + 1 for s in seeds]
+            task_sampler_args["seeds"] = seeds
 
-        xs = data_sampler.sample_xs(
-            curriculum.n_points,
-            bsize,
-            curriculum.n_dims_truncated,
-            **data_sampler_args,
-        )
-        task = task_sampler(**task_sampler_args)
+        curriculum_point = curriculum.current_point
+        
+        # Filter task_sampler_args để loại bỏ các key không hợp lệ
+        # Chỉ giữ lại 'seeds' nếu có
+        filtered_task_args = {}
+        if "seeds" in task_sampler_args:
+            filtered_task_args["seeds"] = task_sampler_args["seeds"]
+        
+        task = task_sampler(**filtered_task_args)
         ys = task.evaluate(xs)
 
         loss_func = task.get_training_metric()
