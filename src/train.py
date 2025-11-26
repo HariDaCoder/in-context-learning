@@ -141,9 +141,15 @@ def train(model, args):
             task_sampler_args["seeds"] = seeds
 
         # curriculum_point = curriculum.current_point
-        n_dims_truncated = curriculum.n_dims
+        n_dims_truncated = curriculum.n_dims_truncated
         n_points = curriculum.n_points
 
+        xs = data_sampler.sample_xs(
+            n_points,
+            bsize,
+            n_dims_truncated=n_dims_truncated,
+            **data_sampler_args,
+        )
         task_sampler_args.pop("valid_coords", None)
 
         task = task_sampler(**task_sampler_args)
