@@ -10,6 +10,31 @@ sns.set_theme("notebook", "darkgrid")
 palette = sns.color_palette("colorblind")
 
 relevant_model_names = {
+    "sparse_regression_killer": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.5)",
+    ],
+    "heavy_tail_noise_killer": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.5)",
+    ],
+    "bounded_support_killer": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.5)",
+    ],
+    "mixture_tasks_killer": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.5)",
+    ],
+    "transfer_tradeoff_task": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.5)",
+    ],
     "wlaplace_noisypoisson": [
         "Transformer",
         "Least Squares",
@@ -115,7 +140,7 @@ def basic_plot(metrics, models=None, trivial=1.0):
     ax.set_xlabel("in-context examples")
     ax.set_ylabel("squared error")
     ax.set_xlim(-1, len(low) + 0.1)
-    ax.set_ylim(-0.1, 2.0)
+    ax.set_ylim(-0.1, 1000)
 
 
     # legend = ax.legend(loc="upper left", bbox_to_anchor=(1, 1))

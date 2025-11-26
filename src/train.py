@@ -81,6 +81,12 @@ def _sanitize_training_kwargs(args):
         "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
         "uniform_hypersphere_regression": {"scale"},
         "wlaplace_noisypoisson": {"scale", "weight_scale", "poisson_rate"},
+        "sparse_regression_killer": {"scale", "k_sparse"},
+        "heavy_tail_noise_killer": {"scale", "noise_type", "df", "noise_scale"},
+        "bounded_support_killer": {"scale", "rate"},
+        "mixture_tasks_killer": {"scale"},
+        "transfer_tradeoff_task": {"scale", "prior_type", "mixture_std"},
+
     }
 
     task_name = args.training.task

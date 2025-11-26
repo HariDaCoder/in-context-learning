@@ -55,7 +55,7 @@ training_schema = {
     "task_kwargs": merge(tdict, required),
     "num_tasks": merge(tinteger, nullable, default(None)),
     "num_training_examples": merge(tinteger, nullable, default(None)),
-    "data": merge(tstring, allowed(["gaussian","ar1","vr1","ar2",'vr2',"nonstation", "sparse_gaussian", "gamma", "beta", "exponential", "laplace"])),
+    "data": merge(tstring, allowed(["gaussian","ar1","vr1","ar2",'vr2',"nonstation", "sparse_gaussian", "gamma", "beta", "exponential", "laplace", "uniform"])),
     "data_kwargs": merge(tdict, default({})),  # Thêm dòng này
     "batch_size": merge(tinteger, default(64)),
     "learning_rate": merge(tfloat, default(3e-4)),

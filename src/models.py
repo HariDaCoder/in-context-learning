@@ -9,6 +9,8 @@ from sklearn.linear_model import LogisticRegression, Lasso, SGDRegressor, HuberR
 import warnings
 from sklearn import tree
 import xgboost as xgb
+from joblib import Parallel, delayed
+import numpy as np
 
 from base_models import NeuralNetwork, ParallelNetworks
 
@@ -30,6 +32,26 @@ def build_model(conf):
 
 def get_relevant_baselines(task_name):
     task_to_baselines = {
+        "sparse_regression_killer": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "heavy_tail_noise_killer": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "bounded_support_killer": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "mixture_tasks_killer": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "transfer_tradeoff_task": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
         "wlaplace_noisypoisson": [
             (LeastSquaresModel, {}),
             (RidgeModel, {"alpha": 0.5}),
@@ -874,12 +896,40 @@ class WeightedLeastSquaresModel:
 class LADModel:
     """
     Least Absolute Deviations (L1 Regression) - Minimize Mean Absolute Error (MAE)
+    Optimized with parallel processing for speed while maintaining quality.
     """
 
-    def __init__(self, max_iter=5000, tol=1e-4):
+    def __init__(self, max_iter=20000, tol=1e-5, n_jobs=-1):
+        """
+        max_iter: maximum iterations for convergence (high for quality)
+        tol: tolerance for convergence
+        n_jobs: number of parallel jobs (-1 for all CPUs, 1 for sequential)
+        """
         self.max_iter = max_iter
         self.tol = tol
+        self.n_jobs = n_jobs
         self.name = "LAD_L1_Regression"
+
+    def _fit_single(self, x_j_np, y_j_np, test_x_j_np):
+        """Fit a single sample - used for parallel processing"""
+        clf = SGDRegressor(
+            loss='epsilon_insensitive',
+            epsilon=0.0,
+            max_iter=self.max_iter,
+            tol=self.tol,
+            fit_intercept=False,
+            random_state=42
+        )
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+                clf.fit(x_j_np, y_j_np)
+            w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
+            y_pred = (torch.from_numpy(test_x_j_np) @ w_pred.float()).squeeze(1)
+            return y_pred[0].item()
+        except Exception as e:
+            # Fallback to median
+            return float(np.median(y_j_np))
 
     def __call__(self, xs, ys, inds=None):
         xs, ys = xs.cpu(), ys.cpu()
@@ -889,55 +939,83 @@ class LADModel:
             if max(inds) >= ys.shape[1] or min(inds) < 0:
                 raise ValueError("inds contain indices where xs and ys are not defined")
 
+        print(f"[{self.name}] Starting evaluation on {len(inds)} points...")
         preds = []
 
-        for i in inds:
+        for i in tqdm(inds, desc=f"{self.name}", leave=False):
             if i == 0:
                 preds.append(torch.zeros_like(ys[:,0]))
                 continue
             train_xs, train_ys = xs[:, :i], ys[:, :i]
             test_x = xs[:, i : i + 1]
 
-            pred = torch.zeros_like(ys[:,0])
-            for j in range(ys.shape[0]):
-                x_j, y_j = train_xs[j], train_ys[j]
-
-                clf = SGDRegressor(
-                    loss='epsilon_insensitive',
-                    epsilon=0.0,
-                    max_iter=self.max_iter,
-                    tol=self.tol,
-                    fit_intercept=False,
-                    random_state=42
+            batch_size = train_xs.shape[0]
+            
+            # Prepare data for parallel processing
+            x_list = [train_xs[j].numpy() for j in range(batch_size)]
+            y_list = [train_ys[j].numpy() for j in range(batch_size)]
+            test_x_list = [test_x[j].numpy() for j in range(batch_size)]
+            
+            # Parallel fit for all batch items
+            if self.n_jobs != 1 and batch_size > 1:
+                results = Parallel(n_jobs=self.n_jobs, backend='threading')(
+                    delayed(self._fit_single)(x_list[j], y_list[j], test_x_list[j])
+                    for j in range(batch_size)
                 )
-
-                try:
-                    clf.fit(x_j.numpy(), y_j.numpy())
-                    w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
-                    y_pred = (test_x[j] @ w_pred.float()).squeeze(1)
-                    pred[j] = y_pred[0]
-                except Exception as e:
-                    # Fallback to median if LAD fails
-                    pred[j] = torch.median(y_j)
+                pred = torch.tensor(results, dtype=torch.float32)
+            else:
+                # Sequential fallback
+                pred = torch.zeros_like(ys[:,0])
+                for j in range(batch_size):
+                    pred[j] = self._fit_single(x_list[j], y_list[j], test_x_list[j])
+            
             preds.append(pred)
 
+        print(f"[{self.name}] Completed!")
         return torch.stack(preds, dim=1)
 
 
 class HuberRegressionModel:
     """
     Huber Regression - Baseline "Hybrid" between L2 and L1.
+    Optimized with parallel processing for speed while maintaining quality.
     """
 
-    def __init__(self, epsilon=1.35, max_iter=1000, alpha=0.0001):
+    def __init__(self, epsilon=1.35, max_iter=2000, alpha=0.0001, n_jobs=-1):
         """
         epsilon: threshold for Huber loss
         alpha: regularization strength
+        n_jobs: number of parallel jobs (-1 for all CPUs, 1 for sequential)
         """
         self.epsilon = epsilon
         self.max_iter = max_iter
         self.alpha = alpha
+        self.n_jobs = n_jobs
         self.name = f"Huber_Regression_epsilon={epsilon}"
+
+    def _fit_single(self, x_j_np, y_j_np, test_x_j_np, x_j_torch, y_j_torch, test_x_j_torch):
+        """Fit a single sample - used for parallel processing"""
+        clf = HuberRegressor(
+            epsilon=self.epsilon,
+            max_iter=self.max_iter,
+            alpha=self.alpha,
+            fit_intercept=False
+        )
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+                clf.fit(x_j_np, y_j_np)
+            w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
+            y_pred = (test_x_j_torch @ w_pred.float()).squeeze(1)
+            return y_pred[0].item()
+        except Exception as e:
+            # Fallback to OLS
+            try:
+                ws, _, _, _ = torch.linalg.lstsq(x_j_torch, y_j_torch.unsqueeze(-1))
+                y_pred = (test_x_j_torch @ ws).squeeze()
+                return y_pred[0].item()
+            except:
+                return float(torch.median(y_j_torch).item())
 
     def __call__(self, xs, ys, inds=None):
         xs, ys = xs.cpu(), ys.cpu()
@@ -947,40 +1025,47 @@ class HuberRegressionModel:
             if max(inds) >= ys.shape[1] or min(inds) < 0:
                 raise ValueError("inds contain indices where xs and ys are not defined")
         
+        print(f"[{self.name}] Starting evaluation on {len(inds)} points...")
         preds = []
 
-        for i in inds:
+        for i in tqdm(inds, desc=f"{self.name}", leave=False):
             if i == 0:
                 preds.append(torch.zeros_like(ys[:,0]))
                 continue
             train_xs, train_ys = xs[:, :i], ys[:, :i]
             test_x = xs[:, i : i + 1]
 
-            pred = torch.zeros_like(ys[:,0])
-            for j in range(ys.shape[0]):
-                x_j, y_j = train_xs[j], train_ys[j]
-
-                clf = HuberRegressor(
-                    epsilon=self.epsilon,
-                    max_iter=self.max_iter,
-                    alpha=self.alpha,
-                    fit_intercept=False
+            batch_size = train_xs.shape[0]
+            
+            # Prepare data for parallel processing
+            x_np_list = [train_xs[j].numpy() for j in range(batch_size)]
+            y_np_list = [train_ys[j].numpy() for j in range(batch_size)]
+            test_x_np_list = [test_x[j].numpy() for j in range(batch_size)]
+            x_torch_list = [train_xs[j] for j in range(batch_size)]
+            y_torch_list = [train_ys[j] for j in range(batch_size)]
+            test_x_torch_list = [test_x[j] for j in range(batch_size)]
+            
+            # Parallel fit for all batch items
+            if self.n_jobs != 1 and batch_size > 1:
+                results = Parallel(n_jobs=self.n_jobs, backend='threading')(
+                    delayed(self._fit_single)(
+                        x_np_list[j], y_np_list[j], test_x_np_list[j],
+                        x_torch_list[j], y_torch_list[j], test_x_torch_list[j]
+                    )
+                    for j in range(batch_size)
                 )
-
-                try:
-                    clf.fit(x_j.numpy(), y_j.numpy())
-                    w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
-                    y_pred = (test_x[j] @ w_pred.float()).squeeze(1)
-                    pred[j] = y_pred[0]
-                except Exception as e:
-                    # Fallback to OLS
-                    try:
-                        ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
-                        y_pred = (test_x[j] @ ws).squeeze()
-                        pred[j] = y_pred[0]
-                    except:
-                        pred[j] = torch.median(y_j)
+                pred = torch.tensor(results, dtype=torch.float32)
+            else:
+                # Sequential fallback
+                pred = torch.zeros_like(ys[:,0])
+                for j in range(batch_size):
+                    pred[j] = self._fit_single(
+                        x_np_list[j], y_np_list[j], test_x_np_list[j],
+                        x_torch_list[j], y_torch_list[j], test_x_torch_list[j]
+                    )
+            
             preds.append(pred)
+        print(f"[{self.name}] Completed!")
         return torch.stack(preds, dim=1)
 
 
@@ -1010,9 +1095,10 @@ class CauchyMLEModel:
             if max(inds) >= ys.shape[1] or min(inds) < 0:
                 raise ValueError("inds contain indices where xs and ys are not defined")
 
+        print(f"[{self.name}] Starting evaluation on {len(inds)} points...")
         preds = []
 
-        for i in inds:
+        for i in tqdm(inds, desc=f"{self.name}", leave=False):
             if i == 0:
                 preds.append(torch.zeros_like(ys[:,0]))
                 continue
@@ -1032,9 +1118,8 @@ class CauchyMLEModel:
                 # Initialize weights: [batch_size, n_dims]
                 w_init = torch.zeros(batch_size, n_dims, dtype=torch.float32)
                 
-                # Compute OLS for each batch (can't fully vectorize due to different i values)
-                # But we can still optimize by using batched operations where possible
-                for j in range(batch_size):
+                # Helper function for parallel initialization
+                def _init_single(j):
                     x_j = train_xs[j]  # [i, n_dims]
                     y_j = train_ys[j]  # [i]
                     
@@ -1045,23 +1130,38 @@ class CauchyMLEModel:
                                 clf = SGDRegressor(
                                     loss='epsilon_insensitive',
                                     epsilon=0.0,
-                                    max_iter=500,
-                                    tol=1e-4,
+                                    max_iter=10000,
+                                    tol=1e-5,
                                     fit_intercept=False,
                                     random_state=42
                                 )
-                                clf.fit(x_j.numpy(), y_j.numpy())
-                                w_init[j] = torch.from_numpy(clf.coef_).float()
+                                # Suppress convergence warnings for cleaner output
+                                with warnings.catch_warnings():
+                                    warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+                                    clf.fit(x_j.numpy(), y_j.numpy())
+                                return torch.from_numpy(clf.coef_).float()
                             except:
                                 # Fallback to OLS
                                 ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
-                                w_init[j] = ws.squeeze()
+                                return ws.squeeze()
                         else:
                             ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
-                            w_init[j] = ws.squeeze()
+                            return ws.squeeze()
                     except:
                         # If all fails, use zero initialization
-                        w_init[j] = torch.zeros(n_dims)
+                        return torch.zeros(n_dims)
+                
+                # Parallel initialization for speed
+                if batch_size > 1:
+                    init_results = Parallel(n_jobs=-1, backend='threading')(
+                        delayed(_init_single)(j) for j in range(batch_size)
+                    )
+                    for j, w in enumerate(init_results):
+                        w_init[j] = w
+                else:
+                    # Sequential for single batch
+                    for j in range(batch_size):
+                        w_init[j] = _init_single(j)
                 
                 # Vectorized optimization: optimize all batches simultaneously
                 w = w_init.clone().requires_grad_(True)
@@ -1093,5 +1193,6 @@ class CauchyMLEModel:
             
             preds.append(pred)
         
+        print(f"[{self.name}] Completed!")
         return torch.stack(preds, dim=1)
                         

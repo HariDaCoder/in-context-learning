@@ -21,6 +21,7 @@ def get_data_sampler(data_name, n_dims, **kwargs):
         "ar2":AR2Sampler,
         "vr2":VR2Sampler,
         "nonstation":NonStationarySampler,
+        "uniform": UniformSampler,
         "exponential": ExponentialSampler,
         "laplace": LaplaceSampler,
         "gamma": GammaSampler,
@@ -63,6 +64,25 @@ def _sample_distribution(dist, b_size, inner_shape, seeds=None):
             xs_b[i] = dist.sample(inner_shape)
     return xs_b
 
+class UniformSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, low=0.0, high=1.0):
+        super().__init__(n_dims)
+        self.bias = bias 
+        self.scale = scale
+        self.low = low
+        self.high = high
+    
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        uni_dist = torch.distributions.Uniform(self.low, self.high)
+        xs_b = _sample_distribution(uni_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
 
 class ExponentialSampler(DataSampler):
     def __init__(self, n_dims, bias=None, scale=None, rate=1.0):
