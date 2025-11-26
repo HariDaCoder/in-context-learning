@@ -140,14 +140,10 @@ def train(model, args):
             task_sampler_args["seeds"] = seeds
 
         curriculum_point = curriculum.current_point
-        
-        # Filter task_sampler_args để loại bỏ các key không hợp lệ
-        # Chỉ giữ lại 'seeds' nếu có
-        filtered_task_args = {}
-        if "seeds" in task_sampler_args:
-            filtered_task_args["seeds"] = task_sampler_args["seeds"]
-        
-        task = task_sampler(**filtered_task_args)
+
+        task_sampler_args.pop("valid_coords", None)
+
+        task = task_sampler(**task_sampler_args)
         ys = task.evaluate(xs)
 
         loss_func = task.get_training_metric()
