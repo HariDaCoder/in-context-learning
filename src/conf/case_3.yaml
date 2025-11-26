@@ -11,9 +11,11 @@ training:
         rate: 1.0
         scale: 1.0
     # Use positive-only input distribution
-    data: uniform
-    data_kwargs:
-        rate: 1.0
+    data: uniform 
+    data_kwargs: {}
+    # data: exponential
+    # data_kwargs:
+    #     rate: 1.0
     curriculum:
         dims:
             start: 5
@@ -27,7 +29,7 @@ training:
             interval: 2000
     batch_size: 64
     learning_rate: 0.0001
-    train_steps: 50001
+    train_steps: 500001
 
 out_dir: ../models/bounded_support_killer
 
