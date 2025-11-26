@@ -2,6 +2,7 @@ import os
 from random import randint
 import uuid
 
+import curriculum
 from quinine import QuinineArgumentParser
 from tqdm import tqdm
 import torch
@@ -139,7 +140,9 @@ def train(model, args):
             data_sampler_args["seeds"] = seeds
             task_sampler_args["seeds"] = seeds
 
-        curriculum_point = curriculum.current_point
+        # curriculum_point = curriculum.current_point
+        n_dims_truncated = curriculum.n_dims
+        n_points = curriculum.n_points
 
         task_sampler_args.pop("valid_coords", None)
 
