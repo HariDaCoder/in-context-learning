@@ -118,13 +118,15 @@ def train(model, args):
 
     n_dims = model.n_dims
     bsize = args.training.batch_size
-    data_sampler = get_data_sampler(args.training.data, n_dims=n_dims, **args.training.data_kwargs)
+    data_sampler = get_data_sampler(
+        args.training.data, n_dims=n_dims, **getattr(args.training, "data_kwargs", {})
+    )
     task_sampler = get_task_sampler(
         args.training.task,
         n_dims,
         bsize,
         num_tasks=args.training.num_tasks,
-        **args.training.task_kwargs,
+        **getattr(args.training, "task_kwargs", {})
     )
     pbar = tqdm(range(starting_step, args.training.train_steps))
 
@@ -134,29 +136,26 @@ def train(model, args):
         data_sampler_args = {}
         task_sampler_args = {}
 
+        if args.training.task == "sparse_linear_regression":
+            task_sampler_args["valid_coords"] = curriculum.n_dims_truncated
+
         if num_training_examples is not None:
             assert num_training_examples >= bsize
             seeds = sample_seeds(num_training_examples, bsize)
             data_sampler_args["seeds"] = seeds
-            task_sampler_args["seeds"] = seeds
-
-        # curriculum_point = curriculum.current_point
-        n_dims_truncated = curriculum.n_dims_truncated
-        n_points = curriculum.n_points
+            task_sampler_args["seeds"] = [s + 1 for s in seeds]
 
         xs = data_sampler.sample_xs(
-            n_points,
+            curriculum.n_points,
             bsize,
-            n_dims_truncated=n_dims_truncated,
+            curriculum.n_dims_truncated,
             **data_sampler_args,
+            device="cuda"
         )
-        task_sampler_args.pop("valid_coords", None)
-
         task = task_sampler(**task_sampler_args)
         ys = task.evaluate(xs)
 
         loss_func = task.get_training_metric()
-
         loss, output = train_step(model, xs.cuda(), ys.cuda(), optimizer, loss_func)
 
         point_wise_tags = list(range(curriculum.n_points))
@@ -168,7 +167,7 @@ def train(model, args):
                 max(curriculum.n_dims_truncated - ii, 0)
                 for ii in range(curriculum.n_points)
             )
-/ curriculum.n_points
+            / curriculum.n_points
         )
 
         if i % args.wandb.log_every_steps == 0 and not args.test_run:
@@ -186,8 +185,8 @@ def train(model, args):
             )
 
         curriculum.update()
-
         pbar.set_description(f"loss {loss}")
+
         if i % args.training.save_every_steps == 0 and not args.test_run:
             training_state = {
                 "model_state_dict": model.state_dict(),
@@ -203,7 +202,6 @@ def train(model, args):
             and i > 0
         ):
             torch.save(model.state_dict(), os.path.join(args.out_dir, f"model_{i}.pt"))
-
 
 def main(args):
     if args.test_run:

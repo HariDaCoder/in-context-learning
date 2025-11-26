@@ -154,11 +154,11 @@ class GaussianSampler(DataSampler):
         self.bias = bias
         self.scale = scale
 
-    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
         if seeds is None:
-            xs_b = torch.randn(b_size, n_points, self.n_dims)
+            xs_b = torch.randn(b_size, n_points, self.n_dims, device=device)
         else:
-            xs_b = torch.zeros(b_size, n_points, self.n_dims)
+            xs_b = torch.zeros(b_size, n_points, self.n_dims, device=device)
             generator = torch.Generator()
             assert len(seeds) == b_size
             for i, seed in enumerate(seeds):
