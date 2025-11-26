@@ -226,6 +226,7 @@ def build_evals(conf):
         "laplace": {"bias", "scale", "loc", "laplace_scale"},
         "gamma": {"bias", "scale", "concentration", "rate"},
         "beta": {"bias", "scale", "alpha", "beta"},
+        "uniform": {"bias", "scale", "low", "high"},
     }
     task_whitelist = {
         "linear_regression": {"scale", "uniform"},
@@ -236,6 +237,14 @@ def build_evals(conf):
         "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform"},
         "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
         "uniform_hypersphere_regression": {"scale"},
+        "linear_regression": {"scale", "uniform"},
+        "sparse_linear_regression": {"scale", "sparsity", "valid_coords"},
+        "sparse_regression_killer": {"scale", "k_sparse"},
+        "heavy_tail_noise_killer": {"scale", "noise_type", "df", "noise_scale"},
+        "bounded_support_killer": {"scale", "rate"},
+        "mixture_tasks_killer": {"scale"},
+        "transfer_tradeoff_task": {"scale", "prior_type", "mixture_std"},
+    
     }
     original_data_kwargs = conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {}
     original_task_kwargs = conf.training.task_kwargs if hasattr(conf.training, "task_kwargs") else {}
