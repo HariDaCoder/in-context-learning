@@ -205,11 +205,14 @@ class TStudentSampler(DataSampler):
         self.df = float(df)
         self.bias = bias
         self.scale = scale
-    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device=None):
         t_dist = torch.distributions.StudentT(df=self.df)
         xs_b = _sample_distribution(t_dist, b_size, (n_points, self.n_dims), seeds)
+        if device is not None:
+            xs_b = xs_b.to(device)
         if self.scale is not None:
-            xs_b = xs_b @ self.scale
+            xs_b = xs_b * self.scale
         if self.bias is not None:
             xs_b += self.bias
         if n_dims_truncated is not None:
