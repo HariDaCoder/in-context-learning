@@ -317,6 +317,8 @@ class LinearRegression(Task):
     def get_training_metric():
         return mean_squared_error
 
+
+
 class SparseLinearRegression(LinearRegression):
     def __init__(
         self,
@@ -459,7 +461,7 @@ class NoisyLinearRegression(LinearRegression):
     def evaluate(self, xs_b):
         ys_b = super().evaluate(xs_b)
         noise = self.sample_noise(ys_b.shape)
-        ys_b_noisy = ys_b + noise
+        ys_b_noisy = ys_b + noise.to(ys_b.device)
 
         if self.renormalize_ys:
             ys_b_noisy = ys_b_noisy * math.sqrt(self.n_dims) / ys_b_noisy.std()
