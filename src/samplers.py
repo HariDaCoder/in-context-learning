@@ -26,6 +26,10 @@ def get_data_sampler(data_name, n_dims, **kwargs):
         "laplace": LaplaceSampler,
         "gamma": GammaSampler,
         "beta": BetaSampler,
+        "tstudent": TStudentSampler,
+        "poisson": PoissonSampler,
+        "rayleigh": RayleighSampler,
+        "cauchy": CauchySampler,
     }
     if data_name in names_to_classes:
         sampler_cls = names_to_classes[data_name]
@@ -186,6 +190,77 @@ class BetaSampler(DataSampler):
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         beta_dist = torch.distributions.Beta(concentration1=self.alpha, concentration0=self.beta)
         xs_b = _sample_distribution(beta_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+    
+class TStudentSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, df=3.0):
+        super().__init__(n_dims)
+        self.df = float(df)
+        self.bias = bias
+        self.scale = scale
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        t_dist = torch.distributions.StudentT(df=self.df)
+        xs_b = _sample_distribution(t_dist, b_size, (n_points, self.n_dims), seeds)
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+class PoissonSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, rate=1.0):
+        super().__init__(n_dims)
+        self.rate = float(rate)
+        self.bias = bias
+        self.scale = scale
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        poisson_dist = torch.distributions.Poisson(rate=self.rate)
+        xs_b = _sample_distribution(poisson_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+class RayleighSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, scale_param=1.0):
+        super().__init__(n_dims)
+        self.bias = bias
+        self.scale = scale
+        self.scale_param = float(scale_param)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        rayleigh_dist = torch.distributions.Rayleigh(scale=self.scale_param)
+        xs_b = _sample_distribution(rayleigh_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+class CauchySampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, loc=0.0, scale_param=1.0):
+        super().__init__(n_dims)
+        self.bias = bias
+        self.scale = scale
+        self.loc = float(loc)
+        self.scale_param = float(scale_param)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        cauchy_dist = torch.distributions.Cauchy(loc=self.loc, scale=self.scale_param)
+        xs_b = _sample_distribution(cauchy_dist, b_size, (n_points, self.n_dims), seeds)
 
         if self.scale is not None:
             xs_b = xs_b @ self.scale

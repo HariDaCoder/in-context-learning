@@ -982,3 +982,64 @@ class TransferTradeoffTask(Task):
     @staticmethod
     def get_training_metric():
         return mean_squared_error
+
+class ScaleMismatchTask(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, train_mode=True):
+        super().__init__(n_dims, batch_size, pool_dict, seeds)
+        if train_mode:
+            self.w_b = torch.rand(self.b_size, self.n_dims, 1) * 2 - 1
+        else:
+            self.w_b = torch.randn(self.b_size, self.n_dims, 1) + 100
+
+        def evaluate(self, xs_b):
+            w_b = self.w_b.to(xs_b.device)
+            ys_b = (xs_b @ w_b)[:, :, 0]
+            return ys_b
+
+        @staticmethod
+        def get_metric():
+            return squared_error
+
+        @staticmethod
+        def get_training_metric():
+            return mean_squared_error
+
+class DenseTestKiller(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None):
+        # w dense: all dimensions = 0.5
+        self.w_b = torch.ones(batch_size, n_dims, 1) * 0.5
+
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_b = (xs_b @ w_b)[:, :, 0]
+        return ys_b
+    
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+class MixedTaskKiller(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None):
+        super().__init__(n_dims, batch_size, pool_dict, seeds)
+        self.w_b = torch.randn(batch_size, n_dims, 1)
+        self.is_sin = torch.randint(0, 2, (batch_size,))
+
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys = xs_b @ w_b[:, :, 0]
+        for i in range(self.b_size):
+            if self.is_sin[i]:
+                ys[i] = torch.sin(ys[i])
+        return us
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error 

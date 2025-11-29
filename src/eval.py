@@ -318,6 +318,52 @@ def build_evals(conf):
         "task_name": "noisy_linear_regression",
     }
 
+    # Case 1: Scale Mismatch OOD test
+    if conf.training.task == "scale_mismatch_killer":
+        evaluation_kwargs = {}
+        # Standard eval (in-distribution)
+        evaluation_kwargs["standard"] = base_kwargs.copy()
+        # OOD eval: w ~ N(100, 1)
+        ood_kwargs = base_kwargs.copy()
+        ood_kwargs["task_sampler_kwargs"] = dict(base_kwargs.get("task_sampler_kwargs", {}))
+        ood_kwargs["task_sampler_kwargs"]["train_mode"] = False
+        evaluation_kwargs["ood_scale_mismatch"] = ood_kwargs
+        return evaluation_kwargs
+
+    # Case 2: Over-Skeptic OOD test
+    if conf.training.task == "noisy_linear_regression" and conf.training.task_kwargs.get("noise_std", 0) >= 20:
+        evaluation_kwargs = {}
+        # Standard eval (noisy)
+        evaluation_kwargs["standard"] = base_kwargs.copy()
+        # OOD eval: linear regression, no noise
+        ood_kwargs = base_kwargs.copy()
+        ood_kwargs["task_name"] = "linear_regression"
+        ood_kwargs["task_sampler_kwargs"] = {}
+        evaluation_kwargs["ood_clean"] = ood_kwargs
+        return evaluation_kwargs
+    # Case 3: Anti-Sparsity Trap (Train sparse, eval densee)
+    if conf.training.task == "sparse_linear_regression" and conf.training.task_kwargs.get("sparsity", 0) <= 2:
+        evaluation_kwargs = {}
+        evaluation_kwargs = {}
+        # Standard eval (mixed)
+        evaluation_kwargs["standard"] = base_kwargs.copy()
+        # OOD eval: linear regression only
+        ood_kwargs = base_kwargs.copy()
+        ood_kwargs["task_name"] = "linear_regression"
+        ood_kwargs["task_sampler_kwargs"] = {}
+        evaluation_kwargs["ood_linear"] = ood_kwargs
+        return evaluation_kwargs
+    # Case 4: Task Confusion (Train mixed, eval linear)
+    if conf.training.task == "mixture_tasks_killer":
+        evaluation_kwargs = {}
+        # Standard eval (mixed)
+        evaluation_kwargs["standard"] = base_kwargs.copy()
+        # OOD eval: linear regression only
+        ood_kwargs = base_kwargs.copy()
+        ood_kwargs["task_name"] = "linear_regression"
+        ood_kwargs["task_sampler_kwargs"] = {}
+        evaluation_kwargs["ood_linear"] = ood_kwargs
+        return evaluation_kwargs
     for name, kwargs in evaluation_kwargs.items():
         # allow kwargs to override base_kwargs values
         evaluation_kwargs[name] = base_kwargs.copy()
