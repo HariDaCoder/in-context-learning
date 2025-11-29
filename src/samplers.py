@@ -206,11 +206,17 @@ class TStudentSampler(DataSampler):
         self.bias = bias
         self.scale = scale
 
-    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device=None):
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
         t_dist = torch.distributions.StudentT(df=self.df)
-        xs_b = _sample_distribution(t_dist, b_size, (n_points, self.n_dims), seeds)
-        if device is not None:
-            xs_b = xs_b.to(device)
+        if seeds is None:
+            xs_b = t_dist.sample((b_size, n_points, self.n_dims)).to(device)
+        else:
+            xs_b = torch.zeros(b_size, n_points, self.n_dims, device=device)
+            generator = torch.Generator()
+            assert len(seeds) == b_size
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                xs_b[i] = t_dist.sample((n_points, self.n_dims), generator=generator).to(device)
         if self.scale is not None:
             xs_b = xs_b * self.scale
         if self.bias is not None:
