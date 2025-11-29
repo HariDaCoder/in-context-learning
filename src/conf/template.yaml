@@ -5,13 +5,13 @@ inherit:
 model:
   family: gpt2
   n_dims: 20
-  n_embd: 128
+  n_embd: 256
   n_head: 8
-  n_layer: 4
+  n_layer: 12
   n_positions: 101
 
 training:
-  batch_size: 64
+  batch_size: 256
   curriculum:
     dims:
       start: 5
@@ -25,7 +25,7 @@ training:
       interval: 2000
 
   # One of: gaussian, sparse_gaussian, ar1, vr1, ar2, vr2, nonstation
-  data: gaussian
+  data: tstudent
 
   # Data kwargs:
   # - When data == 'sparse_gaussian': you may set 'k' (number of non-zero coords).
@@ -47,9 +47,9 @@ training:
   # - For other tasks: any 'sparsity' key will be ignored automatically.
   task_kwargs: {
     # sparsity: 5  # only when task: sparse_linear_regression
-    # noise_std: 2.0      # e.g., for noisy_linear_regression
+    noise_std: 2.0      # e.g., for noisy_linear_regression
     # renormalize_ys: false
-    noise_type: cauchy
+    noise_type: normal
   }
 
   learning_rate: 0.0001
@@ -58,14 +58,14 @@ training:
   num_training_examples: null
   resume_id: null
   save_every_steps: 100
-  train_steps: 5001
+  train_steps: 500001
 
-out_dir: 
+out_dir: /content/drive/MyDrive/models/lr_wx
 
 wandb:
     project: "in-context-training"
     entity: "hai-trinh220970-ho-chi-minh-city-university-of-technology"
-    name: "test"
+    name: "lr_wx"
     notes: "Training with laplace-distributed weights (non-uniform on hypersphere)"
     log_every_steps: 100
 
