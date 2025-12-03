@@ -72,8 +72,11 @@ relevant_model_names = {
     "linear_regression": [
         "Transformer", 
         "Least Squares",
-        # "Ridge (alpha=0.1)", 
+        "Ridge (alpha=0.1)",
         "Ridge (alpha=0.5)",
+        "Ridge (alpha=1.0)",
+        "Ridge (alpha=2.0)",
+        "Ridge (alpha=3.0)",
         "3-Nearest Neighbors",
         "Averaging"
     ],
@@ -144,8 +147,8 @@ def basic_plot(metrics, models=None, trivial=1.0):
     
 
 
-    # legend = ax.legend(loc="upper left", bbox_to_anchor=(1, 1))
-    legend = ax.legend(loc="best")
+    legend = ax.legend(loc="upper left", bbox_to_anchor=(1, 1))
+    # legend = ax.legend(loc="best")
 
     fig.set_size_inches(4, 3)
     for line in legend.get_lines():
