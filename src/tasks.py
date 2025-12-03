@@ -389,6 +389,8 @@ class NoisyLinearRegression(LinearRegression):
         noise_std=2.0,
         renormalize_ys=False,
         noise_type="cauchy",  # "normal", "uniform", "laplace", "t-student", "cauchy", "exponential", "rayleigh", "beta", "poisson"        
+        w_distribution="gaussian",
+        w_kwargs=None,
         uniform=False,
     ):
         super(NoisyLinearRegression, self).__init__(
@@ -397,7 +399,66 @@ class NoisyLinearRegression(LinearRegression):
         self.noise_std = noise_std
         self.renormalize_ys = renormalize_ys
         self.noise_type = noise_type.lower()
+        self.w_distribution = w_distribution.lower()
+        self.w_kwargs = w_kwargs or {}
+        self.w_b = self._compose_weights(pool_dict, seeds)
 
+    def _compose_weights(self, pool_dict, seeds):
+        target_shape = (self.b_size, self.n_dims, 1)
+        if pool_dict is not None:
+            indices = torch.randperm(len(pool_dict["w"]))[: self.b_size]
+            return pool_dict["w"][indices]
+        
+        if seeds is None:
+            return self._sample_distribution(target_shape, generator=None)
+        w_b = torch.zeros(target_shape)
+        for i, seed in enumerate(seeds):
+            gen = torch.Generator().manual_seed(int(seed))
+            w_b[i] = self._sample_distribution((1, self.n_dims, 1), generator=gen).squeeze(0)
+        return w_b
+        
+    def _sample_distribution(self, shape, generator=None):
+        if self.w_distribution == "gaussian":
+            return torch.randn(shape, generator=generator)
+        elif self.w_distribution == "uniform":
+            low = self.w_kwargs.get("low", -1.0)
+            high = self.w_kwargs.get("high", 1.0)
+            return torch.empty(shape, generator=generator).uniform_(low, high)
+        elif self.w_distribution == "laplace":
+            scale = self.w_kwargs.get("scale", 1.0)
+            laplace_dist = torch.distributions.Laplace(loc=0.0, scale=scale)
+            return laplace_dist.sample(shape, generator=generator)
+        elif self.w_distribution == "exponential":
+            rate = self.w_kwargs.get("rate", 1.0)
+            exp_dist = torch.distributions.Exponential(rate=rate)
+            return exp_dist.sample(shape, generator=generator)
+        elif self.w_distribution == "beta":
+            alpha = self.w_kwargs.get("alpha", 2.0)
+            beta = self.w_kwargs.get("beta", 5.0)
+            beta_dist = torch.distributions.Beta(concentration1=alpha, concentration0=beta)
+            return beta_dist.sample(shape, generator=generator)
+        elif self.w_distribution == "poisson":
+            rate = self.w_kwargs.get("rate", 3.0)
+            dist = torch.distributions.Poisson(rate=rate)
+            return dist.sample(shape, generator=generator)
+        elif self.w_distribution == "cauchy":
+            scale = self.w_kwargs.get("scale", 1.0)
+            cauchy_dist = torch.distributions.StudentT(df=1, loc=0.0, scale=scale)
+            return cauchy_dist.sample(shape, generator=generator)
+        elif self.w_distribution == "t-student":
+            df = self.w_kwargs.get("df", 3.0)
+            scale = self.w_kwargs.get("scale", 1.0)
+            t_dist = torch.distributions.StudentT(df=df, loc=0.0, scale=scale)
+            return t_dist.sample(shape, generator=generator)
+        elif self.w_distribution == "rayleigh":
+            lambda_param = self.w_kwargs.get("lambda_param", 1.0)
+            sigma = lambda_param
+            X = torch.randn(shape, generator=generator) * sigma
+            Y = torch.randn(shape, generator=generator) * sigma
+            R = torch.sqrt(X**2 + Y**2)
+            return R
+        else: 
+            raise ValueError(f"Unsupported weight distribution: {self.w_distribution}")
     def sample_noise(self, shape):
         # 1.
         if self.noise_type == "normal":

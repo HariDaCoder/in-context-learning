@@ -61,13 +61,13 @@ relevant_model_names = {
     "noisy_linear_regression": [
         "Transformer",
         "Least Squares",
+        "Ridge (alpha=0.1)",
         "Ridge (alpha=0.5)",
-        "Ridge Var Adj (alpha=0.5, ar=0.5)",
-        "Feasible GLS", 
-        "GLS (ar=0.5)",
-        "LAD (L1 Regression)",
-        "Huber Regression (ε=1.35)",
-        "Cauchy MLE",
+        "Ridge (alpha=1.0)",
+        "Ridge (alpha=2.0)",
+        "Ridge (alpha=3.0)",
+        "3-Nearest Neighbors",
+        "Averaging"
     ],
     "linear_regression": [
         "Transformer", 
@@ -140,7 +140,7 @@ def basic_plot(metrics, models=None, trivial=1.0):
     ax.set_xlabel("in-context examples")
     ax.set_ylabel("squared error")
     ax.set_xlim(-1, len(low) + 0.1)
-    ax.set_ylim(-0.1, 3)
+    ax.set_ylim(-0.1, 4)
     
 
 

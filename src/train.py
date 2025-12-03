@@ -78,7 +78,7 @@ def _sanitize_training_kwargs(args):
         "linear_classification": {"scale", "uniform"},
         "relu_2nn_regression": {"scale", "hidden_layer_size"},
         "decision_tree": {"depth"},
-        "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform"},
+        "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform", "w_distribution", "w_kwargs"},
         "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
         "uniform_hypersphere_regression": {"scale"},
         "wlaplace_noisypoisson": {"scale", "weight_scale", "poisson_rate"},

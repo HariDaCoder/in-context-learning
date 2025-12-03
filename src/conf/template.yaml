@@ -11,7 +11,7 @@ model:
   n_positions: 101
 
 training:
-  batch_size: 256
+  batch_size: 128
   curriculum:
     dims:
       start: 5
@@ -50,6 +50,9 @@ training:
     noise_std: 2.0      # e.g., for noisy_linear_regression
     # renormalize_ys: false
     noise_type: normal
+    w_distribution: gaussian
+    w_kwargs:
+      scale: 1.0
   }
 
   learning_rate: 0.0001
