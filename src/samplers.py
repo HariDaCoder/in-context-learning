@@ -277,6 +277,7 @@ class CauchySampler(DataSampler):
             xs_b += self.bias
         if n_dims_truncated is not None:
             xs_b[:, :, n_dims_truncated:] = 0
+
         return xs_b
 # code này là thêm:
 class SparseGaussianSampler(DataSampler):
@@ -329,6 +330,8 @@ class AR1Sampler(DataSampler):
         self.scale = scale
         self.compute_gradient = compute_gradient
 
+# if __name__ == "__main__":
+#     test_var1_sampler()
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         # Shape: (batch, time, dims)
         xs_b = torch.zeros(b_size, n_points, self.n_dims)

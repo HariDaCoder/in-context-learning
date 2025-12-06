@@ -396,7 +396,7 @@ class NoisyLinearRegression(LinearRegression):
         super(NoisyLinearRegression, self).__init__(
             n_dims, batch_size, pool_dict, seeds, scale, uniform
         )
-        self.noise_std = noise_std
+        self.noise_std = float(noise_std)
         self.renormalize_ys = renormalize_ys
         self.noise_type = noise_type.lower()
         self.w_distribution = w_distribution.lower()

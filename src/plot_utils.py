@@ -111,6 +111,7 @@ relevant_model_names = {
         "Transformer",
         "Least Squares",
         "3-Nearest Neighbors",
+        "2-layer NN, GD",
         "Ridge (alpha=0.1)",
         "Ridge (alpha=1.0)",
         "Ridge Var Adj (alpha=1.0, ar=0.5)",
@@ -118,6 +119,7 @@ relevant_model_names = {
         "GLS (ar=0.5)",
         "Averaging"
     ]
+    ],
 }
 
 

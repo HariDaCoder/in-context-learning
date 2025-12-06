@@ -205,6 +205,9 @@ def eval_model(
     # return results
     return aggregate_metrics(metrics)
 
+    return aggregate_metrics(metrics)
+
+
 def build_evals(conf):
     n_dims = conf.model.n_dims
     n_points = conf.training.curriculum.points.end
@@ -273,6 +276,7 @@ def build_evals(conf):
     # }
     
     # task_name =["linear_regression" if task_name == "ar1_linear_regression" else task_name][0]
+    if task_name not in ["linear_regression", "ar1_linear_regression"]:
     if task_name != "linear_regression":
         if task_name in ["relu_2nn_regression"]:
             evaluation_kwargs["linear_regression"] = {"task_name": "linear_regression"}
