@@ -1,12 +1,16 @@
+from statistics import variance
 import torch
 import torch.nn as nn
 from transformers import GPT2Model, GPT2Config
 from tqdm import tqdm
 from sklearn.svm import LinearSVC
-from sklearn.linear_model import LogisticRegression, Lasso
+from sklearn.linear_model import LogisticRegression, Lasso, SGDRegressor, HuberRegressor
+from sklearn.linear_model import LogisticRegression, Lasso, SGDRegressor, HuberRegressor
 import warnings
 from sklearn import tree
 import xgboost as xgb
+from joblib import Parallel, delayed
+import numpy as np
 
 from base_models import NeuralNetwork, ParallelNetworks
 
@@ -28,8 +32,49 @@ def build_model(conf):
 
 def get_relevant_baselines(task_name):
     task_to_baselines = {
+        "sparse_regression_killer": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "heavy_tail_noise_killer": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "bounded_support_killer": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "mixture_tasks_killer": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "transfer_tradeoff_task": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "wlaplace_noisypoisson": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "laplace_weighted_regression": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "exponential_weighted_regression": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
+        ],
+        "uniform_hypersphere_regression": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.1}),
+            (RidgeModel, {"alpha": 0.5}),
+            (NNModel, {"n_neighbors": 3}),
+            (AveragingModel, {}),
+        ],
         "linear_regression": [
             (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.1}),
+            (RidgeModel, {"alpha": 0.5}),
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
         ],
@@ -41,6 +86,7 @@ def get_relevant_baselines(task_name):
             (LeastSquaresModel, {}),
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
+            (RidgeModel, {"alpha": 0.5}),
         ]
         + [(LassoModel, {"alpha": alpha}) for alpha in [1, 0.1, 0.01, 0.001, 0.0001]],
         "relu_2nn_regression": [
@@ -74,23 +120,29 @@ def get_relevant_baselines(task_name):
         "noisy_linear_regression": [
             (LeastSquaresModel, {}),
             (RidgeModel, {"alpha": 0.1}),
+            (RidgeModel, {"alpha": 0.5}),
             (RidgeModel, {"alpha": 1.0}),
-            (RidgeModelWithVarianceAdjustment, {"alpha": 1.0, "ar_coef": 0.5}),
-            (FeasibleGLSModel, {"ar_coef": None}),
-            (GLSModel, {"ar_coef": 0.5}),
+            (RidgeModel, {"alpha": 2.0}),
+            (RidgeModel, {"alpha": 3.0}),
+            (RidgeModelWithVarianceAdjustment, {"alpha": 0.5, "ar_coef": 0.5}),
+            # (FeasibleGLSModel, {"ar_coef": None}),
+            # (GLSModel, {"ar_coef": 0.5}),
+            # (LADModel, {}),  # L1 Regression
+            # (HuberRegressionModel, {"epsilon": 1.35}),  # Huber Regression
+            # (CauchyMLEModel, {}),  # MLE cho Cauchy
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
         ],
-        "ar1_linear_regression": [
-            (LeastSquaresModel, {}),
-            (RidgeModel, {"alpha": 0.1}),
-            (RidgeModel, {"alpha": 1.0}),
-            (RidgeModelWithVarianceAdjustment, {"alpha": 1.0, "ar_coef": 0.5}),
-            (FeasibleGLSModel, {"ar_coef": None}),
-            (GLSModel, {"ar_coef": 0.5}),
-            (NNModel, {"n_neighbors": 3}),
-            (AveragingModel, {}),
-        ],
+        # "ar1_linear_regression": [
+        #     (LeastSquaresModel, {}),
+        #     (RidgeModel, {"alpha": 0.1}),
+        #     (RidgeModel, {"alpha": 1.0}),
+        #     (RidgeModelWithVarianceAdjustment, {"alpha": 1.0, "ar_coef": 0.5}),
+        #     (FeasibleGLSModel, {"ar_coef": None}),
+        #     (GLSModel, {"ar_coef": 0.5}),
+        #     (NNModel, {"n_neighbors": 3}),
+        #     (AveragingModel, {}),
+        # ],
     }
 
     models = [model_cls(**kwargs) for model_cls, kwargs in task_to_baselines[task_name]]
@@ -119,7 +171,7 @@ class TransformerModel(nn.Module):
         self._read_out = nn.Linear(n_embd, 1)
 
     @staticmethod
-    def _combine(xs_b, ys_b):
+    def _combine(xs_b, ys_b): # Create sequence context by interleaving x's and y's
         """Interleaves the x's and the y's into a single sequence."""
         bsize, points, dim = xs_b.shape
         ys_b_wide = torch.cat(
@@ -495,6 +547,7 @@ class XGBoostModel:
             preds.append(pred)
 
         return torch.stack(preds, dim=1)
+
 class RidgeModel:
     def __init__(self, alpha=1.0):
         """
@@ -782,3 +835,367 @@ class GLSModel:
         indices = torch.arange(n, dtype=torch.float32)
         diff = torch.abs(indices.unsqueeze(0) - indices.unsqueeze(1))
         return torch.pow(ar_coef, diff)
+class WeightedLeastSquaresModel:
+    def __init__(self, variance_model='ols_residual'):
+        """WLS: Heteroscedasticity (V is diagnol matrix)"""
+        self.variance_model = variance_model
+        self.name = f"wls_var_model={variance_model}"
+
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
+
+        preds = []
+
+        for i in inds:
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:, 0]))
+                continue
+
+            train_xs, train_ys = xs[:, :i], ys[:, :i]
+            test_x = xs[:, i : i + 1]
+
+            weights = self._estimate_weights(train_xs, train_ys)
+            sqrt_w = torch.sqrt(torch.clamp(weights, min=1e-8))
+
+            weighted_xs = train_xs * sqrt_w.unsqueeze(-1)
+            weighted_ys = train_ys * sqrt_w
+
+            try:
+                ws, _, _, _ = torch.linalg.lstsq(weighted_xs, weighted_ys.unsqueeze(-1))
+            except torch.linalg.LinAlgError:
+                # fall back to standard OLS if the weighted system is ill-conditioned
+                ws, _, _, _ = torch.linalg.lstsq(train_xs, train_ys.unsqueeze(-1))
+
+            pred = test_x @ ws
+            preds.append(pred[:, 0, 0])
+
+        return torch.stack(preds, dim=1)
+
+    def _estimate_weights(self, train_xs, train_ys):
+        """Return diagonal weights (inverse variances) for WLS."""
+        if self.variance_model == "uniform":
+            return torch.ones_like(train_ys)
+
+        if self.variance_model == "ols_residual":
+            try:
+                ws, _, _, _ = torch.linalg.lstsq(train_xs, train_ys.unsqueeze(-1))
+                preds = (train_xs @ ws).squeeze(-1)
+                residuals = train_ys - preds
+                variances = residuals.pow(2)
+                variances = torch.clamp(variances, min=1e-6)
+                weights = 1.0 / variances
+                return weights
+            except torch.linalg.LinAlgError:
+                return torch.ones_like(train_ys)
+
+        raise ValueError(f"Unknown variance_model '{self.variance_model}' for WLS")
+
+
+class LADModel:
+    """
+    Least Absolute Deviations (L1 Regression) - Minimize Mean Absolute Error (MAE)
+    Optimized with parallel processing for speed while maintaining quality.
+    """
+
+    def __init__(self, max_iter=20000, tol=1e-5, n_jobs=-1):
+        """
+        max_iter: maximum iterations for convergence (high for quality)
+        tol: tolerance for convergence
+        n_jobs: number of parallel jobs (-1 for all CPUs, 1 for sequential)
+        """
+        self.max_iter = max_iter
+        self.tol = tol
+        self.n_jobs = n_jobs
+        self.name = "LAD_L1_Regression"
+
+    def _fit_single(self, x_j_np, y_j_np, test_x_j_np):
+        """Fit a single sample - used for parallel processing"""
+        clf = SGDRegressor(
+            loss='epsilon_insensitive',
+            epsilon=0.0,
+            max_iter=self.max_iter,
+            tol=self.tol,
+            fit_intercept=False,
+            random_state=42
+        )
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+                clf.fit(x_j_np, y_j_np)
+            w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
+            y_pred = (torch.from_numpy(test_x_j_np) @ w_pred.float()).squeeze(1)
+            return y_pred[0].item()
+        except Exception as e:
+            # Fallback to median
+            return float(np.median(y_j_np))
+
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
+
+        print(f"[{self.name}] Starting evaluation on {len(inds)} points...")
+        preds = []
+
+        for i in tqdm(inds, desc=f"{self.name}", leave=False):
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:,0]))
+                continue
+            train_xs, train_ys = xs[:, :i], ys[:, :i]
+            test_x = xs[:, i : i + 1]
+
+            batch_size = train_xs.shape[0]
+            
+            # Prepare data for parallel processing
+            x_list = [train_xs[j].numpy() for j in range(batch_size)]
+            y_list = [train_ys[j].numpy() for j in range(batch_size)]
+            test_x_list = [test_x[j].numpy() for j in range(batch_size)]
+            
+            # Parallel fit for all batch items
+            if self.n_jobs != 1 and batch_size > 1:
+                results = Parallel(n_jobs=self.n_jobs, backend='threading')(
+                    delayed(self._fit_single)(x_list[j], y_list[j], test_x_list[j])
+                    for j in range(batch_size)
+                )
+                pred = torch.tensor(results, dtype=torch.float32)
+            else:
+                # Sequential fallback
+                pred = torch.zeros_like(ys[:,0])
+                for j in range(batch_size):
+                    pred[j] = self._fit_single(x_list[j], y_list[j], test_x_list[j])
+            
+            preds.append(pred)
+
+        print(f"[{self.name}] Completed!")
+        return torch.stack(preds, dim=1)
+
+
+class HuberRegressionModel:
+    """
+    Huber Regression - Baseline "Hybrid" between L2 and L1.
+    Optimized with parallel processing for speed while maintaining quality.
+    """
+
+    def __init__(self, epsilon=1.35, max_iter=2000, alpha=0.0001, n_jobs=-1):
+        """
+        epsilon: threshold for Huber loss
+        alpha: regularization strength
+        n_jobs: number of parallel jobs (-1 for all CPUs, 1 for sequential)
+        """
+        self.epsilon = epsilon
+        self.max_iter = max_iter
+        self.alpha = alpha
+        self.n_jobs = n_jobs
+        self.name = f"Huber_Regression_epsilon={epsilon}"
+
+    def _fit_single(self, x_j_np, y_j_np, test_x_j_np, x_j_torch, y_j_torch, test_x_j_torch):
+        """Fit a single sample - used for parallel processing"""
+        clf = HuberRegressor(
+            epsilon=self.epsilon,
+            max_iter=self.max_iter,
+            alpha=self.alpha,
+            fit_intercept=False
+        )
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+                clf.fit(x_j_np, y_j_np)
+            w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
+            y_pred = (test_x_j_torch @ w_pred.float()).squeeze(1)
+            return y_pred[0].item()
+        except Exception as e:
+            # Fallback to OLS
+            try:
+                ws, _, _, _ = torch.linalg.lstsq(x_j_torch, y_j_torch.unsqueeze(-1))
+                y_pred = (test_x_j_torch @ ws).squeeze()
+                return y_pred[0].item()
+            except:
+                return float(torch.median(y_j_torch).item())
+
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
+        
+        print(f"[{self.name}] Starting evaluation on {len(inds)} points...")
+        preds = []
+
+        for i in tqdm(inds, desc=f"{self.name}", leave=False):
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:,0]))
+                continue
+            train_xs, train_ys = xs[:, :i], ys[:, :i]
+            test_x = xs[:, i : i + 1]
+
+            batch_size = train_xs.shape[0]
+            
+            # Prepare data for parallel processing
+            x_np_list = [train_xs[j].numpy() for j in range(batch_size)]
+            y_np_list = [train_ys[j].numpy() for j in range(batch_size)]
+            test_x_np_list = [test_x[j].numpy() for j in range(batch_size)]
+            x_torch_list = [train_xs[j] for j in range(batch_size)]
+            y_torch_list = [train_ys[j] for j in range(batch_size)]
+            test_x_torch_list = [test_x[j] for j in range(batch_size)]
+            
+            # Parallel fit for all batch items
+            if self.n_jobs != 1 and batch_size > 1:
+                results = Parallel(n_jobs=self.n_jobs, backend='threading')(
+                    delayed(self._fit_single)(
+                        x_np_list[j], y_np_list[j], test_x_np_list[j],
+                        x_torch_list[j], y_torch_list[j], test_x_torch_list[j]
+                    )
+                    for j in range(batch_size)
+                )
+                pred = torch.tensor(results, dtype=torch.float32)
+            else:
+                # Sequential fallback
+                pred = torch.zeros_like(ys[:,0])
+                for j in range(batch_size):
+                    pred[j] = self._fit_single(
+                        x_np_list[j], y_np_list[j], test_x_np_list[j],
+                        x_torch_list[j], y_torch_list[j], test_x_torch_list[j]
+                    )
+            
+            preds.append(pred)
+        print(f"[{self.name}] Completed!")
+        return torch.stack(preds, dim=1)
+
+
+class CauchyMLEModel:
+    """
+    Maximum Likelihood Estimation for Cauchy noise.
+    Minimize negative log-likelihood: sum ln(1 + (y_i - w x_i)^2)
+    Vectorized version for batch processing - much faster than loop-based approach.
+    """
+
+    def __init__(self, max_iter=200, lr=0.01, init_from_lad=True):
+        """
+        max_iter: maximum number of iterations
+        lr: learning rate for gradient descent
+        init_from_lad: initialize from LAD solution (recommended)
+        """
+        self.max_iter = max_iter
+        self.lr = lr
+        self.init_from_lad = init_from_lad
+        self.name = "Cauchy_MLE"
+
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
+
+        print(f"[{self.name}] Starting evaluation on {len(inds)} points...")
+        preds = []
+
+        for i in tqdm(inds, desc=f"{self.name}", leave=False):
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:,0]))
+                continue
+            train_xs, train_ys = xs[:, :i], ys[:, :i]  # [batch_size, i, n_dims], [batch_size, i]
+            test_x = xs[:, i : i + 1]  # [batch_size, 1, n_dims]
+
+            batch_size = train_xs.shape[0]
+            n_dims = train_xs.shape[2]
+
+            # Vectorized initialization: compute OLS for all batches at once
+            try:
+                # Try to solve OLS for all batches simultaneously
+                # train_xs: [batch_size, i, n_dims]
+                # train_ys: [batch_size, i]
+                # We need to solve X @ w = y for each batch
+                
+                # Initialize weights: [batch_size, n_dims]
+                w_init = torch.zeros(batch_size, n_dims, dtype=torch.float32)
+                
+                # Helper function for parallel initialization
+                def _init_single(j):
+                    x_j = train_xs[j]  # [i, n_dims]
+                    y_j = train_ys[j]  # [i]
+                    
+                    try:
+                        if self.init_from_lad:
+                            # Try LAD initialization (still need sklearn for this)
+                            try:
+                                clf = SGDRegressor(
+                                    loss='epsilon_insensitive',
+                                    epsilon=0.0,
+                                    max_iter=10000,
+                                    tol=1e-5,
+                                    fit_intercept=False,
+                                    random_state=42
+                                )
+                                # Suppress convergence warnings for cleaner output
+                                with warnings.catch_warnings():
+                                    warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+                                    clf.fit(x_j.numpy(), y_j.numpy())
+                                return torch.from_numpy(clf.coef_).float()
+                            except:
+                                # Fallback to OLS
+                                ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
+                                return ws.squeeze()
+                        else:
+                            ws, _, _, _ = torch.linalg.lstsq(x_j, y_j.unsqueeze(-1))
+                            return ws.squeeze()
+                    except:
+                        # If all fails, use zero initialization
+                        return torch.zeros(n_dims)
+                
+                # Parallel initialization for speed
+                if batch_size > 1:
+                    init_results = Parallel(n_jobs=-1, backend='threading')(
+                        delayed(_init_single)(j) for j in range(batch_size)
+                    )
+                    for j, w in enumerate(init_results):
+                        w_init[j] = w
+                else:
+                    # Sequential for single batch
+                    for j in range(batch_size):
+                        w_init[j] = _init_single(j)
+                
+                # Vectorized optimization: optimize all batches simultaneously
+                w = w_init.clone().requires_grad_(True)
+                optimizer = torch.optim.Adam([w], lr=self.lr)
+
+                for _ in range(self.max_iter):
+                    optimizer.zero_grad()
+                    
+                    # Vectorized computation: [batch_size, i] = [batch_size, i] - [batch_size, i, n_dims] @ [batch_size, n_dims, 1]
+                    # Use einsum for efficient batched matrix multiplication
+                    predictions = torch.einsum('bij,bj->bi', train_xs, w)  # [batch_size, i]
+                    residuals = train_ys - predictions  # [batch_size, i]
+                    
+                    # Negative log-likelihood for Cauchy: sum over i dimension
+                    # loss per batch: [batch_size]
+                    loss_per_batch = torch.sum(torch.log(1 + residuals ** 2), dim=1)
+                    total_loss = torch.sum(loss_per_batch)  # scalar
+                    
+                    total_loss.backward()
+                    optimizer.step()
+
+                # Vectorized prediction: [batch_size, 1, n_dims] @ [batch_size, n_dims, 1] -> [batch_size, 1, 1]
+                w_final = w.detach()  # [batch_size, n_dims]
+                pred = torch.einsum('bij,bj->bi', test_x, w_final).squeeze(1)  # [batch_size]
+                
+            except Exception as e:
+                # Fallback: use median for each batch
+                pred = torch.median(train_ys, dim=1)[0]  # [batch_size]
+            
+            preds.append(pred)
+        
+        print(f"[{self.name}] Completed!")
+        return torch.stack(preds, dim=1)
+                        
