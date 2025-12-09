@@ -1,3 +1,4 @@
+import enum
 import math
 
 import torch
@@ -15,9 +16,29 @@ def get_data_sampler(data_name, n_dims, **kwargs):
     names_to_classes = {
         "gaussian": GaussianSampler,
         "ar1":AR1Sampler,
+        "vr1":VAR1Sampler,
+        "sparse_gaussian": SparseGaussianSampler,
+        "ar2":AR2Sampler,
+        "vr2":VR2Sampler,
+        "nonstation":NonStationarySampler,
+        "uniform": UniformSampler,
+        "exponential": ExponentialSampler,
+        "laplace": LaplaceSampler,
+        "gamma": GammaSampler,
+        "beta": BetaSampler,
+        "tstudent": TStudentSampler,
+        "poisson": PoissonSampler,
+        "rayleigh": RayleighSampler,
+        "cauchy": CauchySampler,
     }
     if data_name in names_to_classes:
         sampler_cls = names_to_classes[data_name]
+        # Only add 'k' parameter for sparse_gaussian sampler
+        if data_name == "sparse_gaussian" and 'k' not in kwargs:
+            kwargs['k'] = n_dims // 2  # default k is half of dimensions
+        # Only add 'scale' parameter for sparse_gaussian sampler (as scalar)
+        if data_name == "sparse_gaussian" and 'scale' not in kwargs:
+            kwargs['scale'] = 1.0      # default scale is 1.0 for sparse_gaussian
         return sampler_cls(n_dims, **kwargs)
     else:
         print("Unknown sampler")
@@ -33,6 +54,103 @@ def sample_transformation(eigenvalues, normalize=False):
         t *= math.sqrt(n_dims / norm_subspace)
     return t
 
+def _sample_distribution(dist, b_size, inner_shape, seeds=None):
+    sample_shape = (b_size, *inner_shape)
+    if seeds is None:
+        return dist.sample(sample_shape)
+
+    assert len(seeds) == b_size
+    template = dist.mean
+    xs_b = torch.empty(sample_shape, dtype=template.dtype, device=template.device)
+    for i, seed in enumerate(seeds):
+        with torch.random.fork_rng():
+            torch.manual_seed(int(seed))
+            xs_b[i] = dist.sample(inner_shape)
+    return xs_b
+
+class UniformSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, low=0.0, high=1.0):
+        super().__init__(n_dims)
+        self.bias = bias 
+        self.scale = scale
+        self.low = low
+        self.high = high
+    
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        uni_dist = torch.distributions.Uniform(self.low, self.high)
+        xs_b = _sample_distribution(uni_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
+class ExponentialSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, rate=1.0):
+        super().__init__(n_dims)
+        self.bias = bias
+        self.scale = scale
+        self.rate = float(rate)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        exp_dist = torch.distributions.Exponential(rate=self.rate)
+        xs_b = _sample_distribution(exp_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
+
+class LaplaceSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, loc=0.0, laplace_scale=1.0):
+        super().__init__(n_dims)
+        self.bias = bias
+        self.scale = scale
+        self.loc = float(loc)
+        self.laplace_scale = float(laplace_scale)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        laplace_dist = torch.distributions.Laplace(loc=self.loc, scale=self.laplace_scale)
+        xs_b = _sample_distribution(laplace_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
+
+class GammaSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, concentration=2.0, rate=1.0):
+        super().__init__(n_dims)
+        if concentration <= 0 or rate <= 0:
+            raise ValueError("concentration and rate must be positive for Gamma distribution.")
+        self.bias = bias
+        self.scale = scale
+        self.concentration = float(concentration)
+        self.rate = float(rate)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        gamma_dist = torch.distributions.Gamma(concentration=self.concentration, rate=self.rate)
+        xs_b = _sample_distribution(gamma_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
 
 class GaussianSampler(DataSampler):
     def __init__(self, n_dims, bias=None, scale=None):
@@ -40,11 +158,11 @@ class GaussianSampler(DataSampler):
         self.bias = bias
         self.scale = scale
 
-    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
         if seeds is None:
-            xs_b = torch.randn(b_size, n_points, self.n_dims)
+            xs_b = torch.randn(b_size, n_points, self.n_dims, device=device)
         else:
-            xs_b = torch.zeros(b_size, n_points, self.n_dims)
+            xs_b = torch.zeros(b_size, n_points, self.n_dims, device=device)
             generator = torch.Generator()
             assert len(seeds) == b_size
             for i, seed in enumerate(seeds):
@@ -57,125 +175,163 @@ class GaussianSampler(DataSampler):
         if n_dims_truncated is not None:
             xs_b[:, :, n_dims_truncated:] = 0
         return xs_b
+
+
+class BetaSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, alpha=2.0, beta=5.0):
+        super().__init__(n_dims)
+        if alpha <= 0 or beta <= 0:
+            raise ValueError("alpha and beta must be positive for Beta distribution.")
+        self.bias = bias
+        self.scale = scale
+        self.alpha = float(alpha)
+        self.beta = float(beta)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        beta_dist = torch.distributions.Beta(concentration1=self.alpha, concentration0=self.beta)
+        xs_b = _sample_distribution(beta_dist, b_size, (n_points, self.n_dims), seeds)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
     
-    
-# class AR1Sampler(DataSampler):
-#     def __init__(self, n_dims, bias=None, scale=0.9, sigma=0.5, init_state=None):
-#         super().__init__(n_dims)
-#         # phi là số thực, có thể lấy trace nếu scale là ma trận
-#         if torch.is_tensor(scale) and scale.ndim == 2:
-#             self.phi = torch.trace(scale).item()
-#         elif isinstance(scale, (int, float)):
-#             self.phi = float(scale)
-#         else:
-#             raise ValueError("scale phải là số hoặc ma trận 2D torch.Tensor")
+class TStudentSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, df=3.0):
+        super().__init__(n_dims)
+        self.df = float(df)
+        self.bias = bias
+        self.scale = scale
 
-#         self.sigma = sigma
-#         self.bias = bias
-#         self.init_state = init_state if init_state is not None else torch.ones(n_dims)
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
+        t_dist = torch.distributions.StudentT(df=self.df)
+        if seeds is None:
+            xs_b = t_dist.sample((b_size, n_points, self.n_dims)).to(device)
+        else:
+            xs_b = torch.zeros(b_size, n_points, self.n_dims, device=device)
+            generator = torch.Generator()
+            assert len(seeds) == b_size
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                xs_b[i] = t_dist.sample((n_points, self.n_dims), generator=generator).to(device)
+        if self.scale is not None:
+            xs_b = xs_b * self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+class PoissonSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, rate=1.0):
+        super().__init__(n_dims)
+        self.rate = float(rate)
+        self.bias = bias
+        self.scale = scale
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        poisson_dist = torch.distributions.Poisson(rate=self.rate)
+        xs_b = _sample_distribution(poisson_dist, b_size, (n_points, self.n_dims), seeds)
 
-#     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
-#         xs_b = torch.zeros(b_size, n_points, self.n_dims)
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+class RayleighSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, scale_param=1.0):
+        super().__init__(n_dims)
+        self.bias = bias
+        self.scale = scale
+        self.scale_param = float(scale_param)
 
-#         for b in range(b_size):
-#             if seeds is not None:
-#                 torch.manual_seed(seeds[b])
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        rayleigh_dist = torch.distributions.Rayleigh(scale=self.scale_param)
+        xs_b = _sample_distribution(rayleigh_dist, b_size, (n_points, self.n_dims), seeds)
 
-#             state = self.init_state.clone()
-#             for t in range(n_points):
-#                 # noise = torch.randn(self.n_dims) * self.sigma
-#                 state = self.phi * state
-#                 if self.bias is not None:
-#                     state += self.bias
-#                 xs_b[b, t] = state
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+class CauchySampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, loc=0.0, scale_param=1.0):
+        super().__init__(n_dims)
+        self.bias = bias
+        self.scale = scale
+        self.loc = float(loc)
+        self.scale_param = float(scale_param)
 
-#         if n_dims_truncated is not None:
-#             xs_b[:, :, n_dims_truncated:] = 0
-#         return xs_b
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        cauchy_dist = torch.distributions.Cauchy(loc=self.loc, scale=self.scale_param)
+        xs_b = _sample_distribution(cauchy_dist, b_size, (n_points, self.n_dims), seeds)
 
-# class VAR1Sampler(DataSampler):
-#     def __init__(self, n_dims, bias=None, scale=None, sigma=0.5, init_state=None):
-#         super().__init__(n_dims)
-#         if scale is None:
-#             self.phi = 0.9 * torch.eye(n_dims)
-#         else:
-#             assert scale.shape == (n_dims, n_dims), "scale phải có shape (n_dims, n_dims)"
-#             self.phi = scale
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
 
-#         self.bias = bias
-#         self.sigma = sigma
-#         self.init_state = init_state if init_state is not None else torch.ones(n_dims)
-
-#     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
-#         xs_b = torch.zeros(b_size, n_points, self.n_dims)
-
-#         for b in range(b_size):
-#             if seeds is not None:
-#                 torch.manual_seed(seeds[b])
-
-#             state = self.init_state.clone()
-#             for t in range(n_points):
-#                 noise = torch.randn(self.n_dims) * self.sigma
-#                 state = self.phi @ state + noise
-#                 if self.bias is not None:
-#                     state += self.bias
-#                 xs_b[b, t] = state
-
-#         if n_dims_truncated is not None:
-#             xs_b[:, :, n_dims_truncated:] = 0
-#         return xs_b
-# def test_ar1_sampler():
-#     n_dims = 3
-#     n_points = 5
-#     b_size = 2
-#     phi = 0.5
-#     sigma = 0.0
-#     init_state = torch.tensor([1.0, 2.0, 3.0])
-
-#     seeds = [42, 123]
-
-#     sampler = AR1Sampler(n_dims=n_dims, scale=phi, sigma=sigma, init_state=init_state)
-#     xs = sampler.sample_xs(n_points=n_points, b_size=b_size, seeds=seeds)
-
-#     print("Output shape:", xs.shape)  # should be (b_size, n_points, n_dims)
-#     print("First batch:\n", xs[0])
-#     print("Second batch:\n", xs[1])
-
-#     # Test reproducibility
-#     xs2 = sampler.sample_xs(n_points=n_points, b_size=b_size, seeds=seeds)
-#     assert torch.allclose(xs, xs2), "Output not reproducible with same seeds!"
-#     print("Reproducibility test passed.")
-
-#     # Test AR1 dynamics roughly
-#     print("\nCheck AR1 dynamics:")
-#     for t in range(1, n_points):
-#         expected = phi * xs[0, t-1]
-#         print(f"t={t}, previous*phi: {expected}, current: {xs[0, t]}")
-        
-        
-# def test_var1_sampler():
-#     n_dims = 2
-#     n_points = 4
-#     b_size = 2
-#     phi = torch.tensor([[0.5, 0.1], [0.0, 0.7]])
-#     sigma = 0.1
-#     init_state = torch.tensor([1.0, 2.0])
-#     seeds = [42, 123]
-
-#     sampler = VAR1Sampler(n_dims=n_dims, scale=phi, sigma=sigma, init_state=init_state)
-#     xs = sampler.sample_xs(n_points=n_points, b_size=b_size, seeds=seeds)
-#     print(xs)
-
+        return xs_b
 # code này là thêm:
+class SparseGaussianSampler(DataSampler):
+    def __init__(self, n_dims, k, bias=None, scale=None):
+        super().__init__(n_dims)
+        if not (0 < k <= n_dims):
+            raise ValueError(f"k must be in range (0, {n_dims}]")
+        self.k = int(k)
+        self.bias = bias
+        # Store scale as float
+        self.scale = float(scale) if isinstance(scale, (int, float)) else 1.0
+    
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        if seeds is None:
+            xs_b = torch.zeros(b_size, n_points, self.n_dims)
+            values = torch.randn(b_size, n_points, self.k)
+            rand_scores = torch.rand(b_size, n_points, self.n_dims)
+            _, indices = torch.topk(rand_scores, self.k, dim=-1)
+            xs_b.scatter_(dim=2, index=indices, src=values)
+        else:
+            xs_b = torch.zeros(b_size, n_points, self.n_dims)
+            assert len(seeds) == b_size
+            for i in range(b_size):
+                generator = torch.Generator().manual_seed(int(seeds[i]))
+                values = torch.randn(n_points, self.k, generator=generator)
+                rand_scores = torch.rand(n_points, self.n_dims, generator=generator)
+                _, indices = torch.topk(rand_scores, self.k, dim=-1)
+                xs_b[i].scatter_(dim=1, index=indices, src=values)
+
+        if self.scale is not None:
+            # Simple scalar multiplication 
+            xs_b = xs_b * self.scale
+            
+        if self.bias is not None:
+            xs_b += self.bias
+            
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+            
+        return xs_b
+
+
 class AR1Sampler(DataSampler):
-    def __init__(self, n_dims, rho=0.9, noise_std=1.0, bias=None, scale=None):
+    def __init__(self, n_dims, rho=0.9, noise_std=1.0, bias=None, scale=None,compute_gradient=False):
         super().__init__(n_dims)
         assert 0 <= abs(rho) < 1, "|rho| must be < 1 for a stable AR(1)"
         self.rho = float(rho)
         self.noise_std = float(noise_std)
         self.bias = bias
         self.scale = scale
+        self.compute_gradient = compute_gradient
 
+# if __name__ == "__main__":
+#     test_var1_sampler()
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         # Shape: (batch, time, dims)
         xs_b = torch.zeros(b_size, n_points, self.n_dims)
@@ -215,11 +371,17 @@ class AR1Sampler(DataSampler):
             xs_b[:, :, n_dims_truncated:] = 0
 
         return xs_b
+class AR2Sampler(DataSampler):
+    def __init__(self, n_dims, ar1_coef=0.5, ar2_coef=0.3, noise_std=1.0, bias=None, scale=None):
+        super().__init__(n_dims)
+        assert abs(ar2_coef) < 1, "|ar2_coef| must be < 1 for a stable AR(2)"
+        
+        self.ar1_coef = float(ar1_coef)
+        self.ar2_coef = float(ar2_coef)
+        self.noise_std = float(noise_std)
+        self.bias = bias
+        self.scale = scale
 
-<<<<<<< Updated upstream
-# if __name__ == "__main__":
-#     test_var1_sampler()
-=======
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         # Shape: (batch, time, dims)
         xs_b = torch.zeros(b_size, n_points, self.n_dims)
@@ -276,8 +438,8 @@ class VR2Sampler(DataSampler):
         assert ar1_mat.shape == (n_dims, n_dims), "ar1_mat must be n_dims x n_dims"
         assert ar2_mat.shape == (n_dims, n_dims), "ar2_mat must be n_dims x n_dims"
         
-        self.ar1_mat = ar1_mat.clone().detach().to(dtype=torch.float32)
-        self.ar2_mat = ar2_mat.clone().detach().to(dtype=torch.float32)
+        self.ar1_mat = torch.tensor(ar1_mat, dtype=torch.float32)
+        self.ar2_mat = torch.tensor(ar2_mat, dtype=torch.float32)
         self.noise_std = float(noise_std)
         self.bias = bias
         self.scale = scale
@@ -322,46 +484,19 @@ class VR2Sampler(DataSampler):
         return xs_b
  
 class NonStationarySampler(DataSampler):
-    def __init__(self, n_dims, coef_base=0.5, coef_amplitude=0.4, noise_std = 0.1,  bias=None, scale=None, mode="regime"):
-        """
-        mode ∈ {"sinusoidal", "linear", "regime"}
-        """
+    def __init__(self, n_dims, coef_base=0.5, coef_amplitude=0.4, noise_std = 0.1,  bias=None, scale=None):
         super().__init__(n_dims)
         self.coef_base = float(coef_base)
         self.coef_amplitude = float(coef_amplitude)
         self.noise_std = float(noise_std)
         self.scale = scale
         self.bias = bias
-        
-    def get_trainsition_matrix_linear(self, t, n_points):
-        t_norm = t / (n_points - 1) if n_points > 1 else 0.0
-        time_varying_factor = self.coef_base + self.coef_amplitude * t_norm
-        A_t = time_varying_factor * torch.eye(self.n_dims)
-        return A_t
-    def get_transition_matrix_regime(self, t, n_points):
-        if t < n_points // 3:
-            factor = self.coef_base
-        elif t < 2 * n_points // 3:
-            factor = self.coef_base + self.coef_amplitude
-        else:
-            factor = self.coef_base - self.coef_amplitude
-        A_t = factor * torch.eye(self.n_dims)
-    def get_transition_matrix_sinusoidal(self, t, n_points):
+    def get_transition_matrix(self, t, n_points):
         t_norm = t / (n_points - 1) if n_points > 1 else 0.0
         time_varying_factor = self.coef_base + self.coef_amplitude * math.sin(2 * math.pi * t_norm)
         A_t = time_varying_factor * torch.eye(self.n_dims)
         return A_t
 
-    def get_transition_matrix(self, t, n_points):
-        if self.mode == "sinusoidal":
-            return self.get_transition_matrix_sinusoidal(t, n_points)
-        elif self.mode == "linear":
-            return self.get_trainsition_matrix_linear(t, n_points)
-        elif self.mode == "regime":
-            return self.get_transition_matrix_regime(t, n_points)
-        else:
-            raise ValueError(f"Unknown mode: {self.mode}")
-        
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         xs_b = torch.zeros(b_size, n_points, self.n_dims)
         generators = None
@@ -390,4 +525,49 @@ class NonStationarySampler(DataSampler):
             xs_b += self.bias
         
         return xs_b
->>>>>>> Stashed changes
+class VAR1Sampler(DataSampler):
+    def __init__(self, n_dims, ar1_mat=None, noise_std=1.0, bias=None, scale=None):
+        super().__init__(n_dims)
+
+        if ar1_mat is None:
+            ar1_mat = 0.9 * torch.eye(n_dims)
+
+        assert ar1_mat.shape == (n_dims, n_dims), "ar1_mat must be n_dims x n_dims"
+
+        if isinstance(ar1_mat, torch.Tensor):
+            self.ar1_mat = ar1_mat.float()
+        else:
+            self.ar1_mat = torch.tensor(ar1_mat, dtype=torch.float32)
+
+        self.noise_std = float(noise_std)
+        self.bias = bias
+        self.scale = scale
+    def sample(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        xs_b = torch.zeros(b_size, n_points, self.n_dims)
+
+        generators = None
+        if seeds is not None:
+            assert len(seeds) == b_size
+            generators = [torch.Generator().manual_seed(int(seed)) for seed in seeds]
+
+        if generators is None:
+            xs_b[:, 0, :] = torch.randn(b_size, self.n_dims)
+        else:
+            for i in range(b_size):
+                xs_b[i, 0, i] = torch.randn(self.n_dims, generator=generators[i])
+        for t in range(1, n_points):
+            if generators is None:
+                eps_t = self.noise_std * torch.randn(b_size, self.n_dims)
+            else:
+                eps_t = torch.zeros(b_size, self.n_dims)
+                for i in range(b_size):
+                    eps_t[i] = self.noise_std * torch.randn(self.n_dims, generator=generators[i])
+            xs_b[:, t, :] = torch.matmul(xs_b[:, t - 1, :], self.ar1_mat.T) + eps_t
+
+            if self.scale is not None:
+                xs_b = xs_b @ self.scale
+            if self.bias is not None:
+                xs_b += self.bias
+            if n_dims_truncated is not None:
+                xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b

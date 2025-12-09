@@ -186,10 +186,6 @@ def eval_model(
 
     metrics = torch.cat(all_metrics, dim=0)
 
-<<<<<<< Updated upstream
-    return aggregate_metrics(metrics)
-
-=======
     # if prompting_strategy == "standard":
     #     grad_alignments = compute_gradient_alignment(model, task_sampler(), xs[0])
     #     if grad_alignments is not None:
@@ -205,8 +201,7 @@ def eval_model(
         # except Exception:
         #     # best-effort: don't fail whole eval if grad computation crashes
         #     pass
-    return results
->>>>>>> Stashed changes
+    return metrics
 
 def build_evals(conf):
     n_dims = conf.model.n_dims
@@ -228,16 +223,12 @@ def build_evals(conf):
     evaluation_kwargs = {}
 
     evaluation_kwargs["standard"] = {"prompting_strategy": "standard"}
-<<<<<<< Updated upstream
-    if task_name not in ["linear_regression", "ar1_linear_regression"]:
-=======
     evaluation_kwargs["gradient"] = {
         "prompting_strategy": "standard",
     }
     
     task_name =["linear_regression" if task_name == "ar1_linear_regression" else task_name][0]
     if task_name != "linear_regression":
->>>>>>> Stashed changes
         if task_name in ["relu_2nn_regression"]:
             evaluation_kwargs["linear_regression"] = {"task_name": "linear_regression"}
         for name, kwargs in evaluation_kwargs.items():
@@ -310,7 +301,21 @@ def compute_evals(all_models, evaluation_kwargs, save_path=None, recompute=False
 
     if save_path is not None:
         with open(save_path, "w") as fp:
-            json.dump(all_metrics, fp, indent=2)
+            # Convert tensors to native Python types for JSON serialization
+            def convert_to_native(obj):
+                if isinstance(obj, torch.Tensor):
+                    return obj.cpu().detach().numpy().tolist()
+                elif isinstance(obj, dict):
+                    return {k: convert_to_native(v) for k, v in obj.items()}
+                elif isinstance(obj, (list, tuple)):
+                    return [convert_to_native(item) for item in obj]
+                elif isinstance(obj, (np.ndarray, np.generic)):
+                    return obj.tolist()
+                else:
+                    return obj
+            
+            serializable_metrics = convert_to_native(all_metrics)
+            json.dump(serializable_metrics, fp, indent=2)
 
     return all_metrics
 
@@ -418,8 +423,6 @@ def read_run_dir(run_dir):
     assert len(df) == len(df.run_name.unique())
     return df
 
-<<<<<<< Updated upstream
-=======
 # Figure 3 and 4:
 # def compute_gradient_alignment(model, task, xs, n_points=40):
 
@@ -504,7 +507,6 @@ def read_run_dir(run_dir):
 #         alignments.append(cos_sim)
 
 #     return alignments
->>>>>>> Stashed changes
 if __name__ == "__main__":
     run_dir = sys.argv[1]
     for task in os.listdir(run_dir):
