@@ -423,7 +423,10 @@ class NoisyLinearRegression(LinearRegression):
         elif self.w_distribution == "uniform":
             low = self.w_kwargs.get("low", -1.0)
             high = self.w_kwargs.get("high", 1.0)
-            return torch.empty(shape, generator=generator).uniform_(low, high)
+            if generator is None:
+                return torch.empty(shape).uniform_(low, high)
+            else:
+                return torch.empty(shape, generator=generator).uniform_(low, high)
         elif self.w_distribution == "laplace":
             scale = self.w_kwargs.get("scale", 1.0)
             laplace_dist = torch.distributions.Laplace(loc=0.0, scale=scale)

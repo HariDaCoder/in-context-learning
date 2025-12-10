@@ -187,9 +187,10 @@ class BetaSampler(DataSampler):
         self.alpha = float(alpha)
         self.beta = float(beta)
 
-    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
         beta_dist = torch.distributions.Beta(concentration1=self.alpha, concentration0=self.beta)
         xs_b = _sample_distribution(beta_dist, b_size, (n_points, self.n_dims), seeds)
+        xs_b = xs_b.to(device)
 
         if self.scale is not None:
             xs_b = xs_b @ self.scale
@@ -230,9 +231,10 @@ class PoissonSampler(DataSampler):
         self.rate = float(rate)
         self.bias = bias
         self.scale = scale
-    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
         poisson_dist = torch.distributions.Poisson(rate=self.rate)
         xs_b = _sample_distribution(poisson_dist, b_size, (n_points, self.n_dims), seeds)
+        xs_b = xs_b.to(device)
 
         if self.scale is not None:
             xs_b = xs_b @ self.scale
@@ -248,9 +250,10 @@ class RayleighSampler(DataSampler):
         self.scale = scale
         self.scale_param = float(scale_param)
 
-    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
         rayleigh_dist = torch.distributions.Rayleigh(scale=self.scale_param)
         xs_b = _sample_distribution(rayleigh_dist, b_size, (n_points, self.n_dims), seeds)
+        xs_b = xs_b.to(device)
 
         if self.scale is not None:
             xs_b = xs_b @ self.scale
@@ -267,9 +270,10 @@ class CauchySampler(DataSampler):
         self.loc = float(loc)
         self.scale_param = float(scale_param)
 
-    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
         cauchy_dist = torch.distributions.Cauchy(loc=self.loc, scale=self.scale_param)
         xs_b = _sample_distribution(cauchy_dist, b_size, (n_points, self.n_dims), seeds)
+        xs_b = xs_b.to(device)
 
         if self.scale is not None:
             xs_b = xs_b @ self.scale
@@ -290,20 +294,20 @@ class SparseGaussianSampler(DataSampler):
         # Store scale as float
         self.scale = float(scale) if isinstance(scale, (int, float)) else 1.0
     
-    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
         if seeds is None:
-            xs_b = torch.zeros(b_size, n_points, self.n_dims)
-            values = torch.randn(b_size, n_points, self.k)
-            rand_scores = torch.rand(b_size, n_points, self.n_dims)
+            xs_b = torch.zeros(b_size, n_points, self.n_dims, device=device)
+            values = torch.randn(b_size, n_points, self.k, device=device)
+            rand_scores = torch.rand(b_size, n_points, self.n_dims, device=device)
             _, indices = torch.topk(rand_scores, self.k, dim=-1)
             xs_b.scatter_(dim=2, index=indices, src=values)
         else:
-            xs_b = torch.zeros(b_size, n_points, self.n_dims)
+            xs_b = torch.zeros(b_size, n_points, self.n_dims, device=device)
             assert len(seeds) == b_size
             for i in range(b_size):
                 generator = torch.Generator().manual_seed(int(seeds[i]))
-                values = torch.randn(n_points, self.k, generator=generator)
-                rand_scores = torch.rand(n_points, self.n_dims, generator=generator)
+                values = torch.randn(n_points, self.k, generator=generator, device=device)
+                rand_scores = torch.rand(n_points, self.n_dims, generator=generator, device=device)
                 _, indices = torch.topk(rand_scores, self.k, dim=-1)
                 xs_b[i].scatter_(dim=1, index=indices, src=values)
 
@@ -347,19 +351,19 @@ class AR1Sampler(DataSampler):
 
         # Initialize x_0 ~ N(0, I)
         if generators is None:
-            xs_b[:, 0, :] = torch.randn(b_size, self.n_dims)
+            xs_b[:, 0, :] = torch.randn(b_size, self.n_dims, device=device)
         else:
             for i in range(b_size):
-                xs_b[i, 0, :] = torch.randn(self.n_dims, generator=generators[i])
+                xs_b[i, 0, :] = torch.randn(self.n_dims, generator=generators[i], device=device)
 
         # AR(1): x_t = rho * x_{t-1} + eps_t, eps_t ~ N(0, noise_std^2 I)
         for t in range(1, n_points):
             if generators is None:
-                eps_t = self.noise_std * torch.randn(b_size, self.n_dims)
+                eps_t = self.noise_std * torch.randn(b_size, self.n_dims, device=device)
             else:
-                eps_t = torch.zeros(b_size, self.n_dims)
+                eps_t = torch.zeros(b_size, self.n_dims, device=device)
                 for i in range(b_size):
-                    eps_t[i] = self.noise_std * torch.randn(self.n_dims, generator=generators[i])
+                    eps_t[i] = self.noise_std * torch.randn(self.n_dims, generator=generators[i], device=device)
             xs_b[:, t, :] = self.rho * xs_b[:, t - 1, :] + eps_t
 
         if self.scale is not None:

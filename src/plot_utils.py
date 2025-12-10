@@ -118,7 +118,6 @@ relevant_model_names = {
         "Feasible GLS", 
         "GLS (ar=0.5)",
         "Averaging"
-    ]
     ],
 }
 

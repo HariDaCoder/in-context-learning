@@ -20,14 +20,6 @@ import wandb
 torch.backends.cudnn.benchmark = True
 
 
-def train_step(model, xs, ys, optimizer, loss_func):
-    optimizer.zero_grad()
-    output = model(xs, ys)
-    loss = loss_func(output, ys)
-    loss.backward()
-    optimizer.step()
-    return loss.detach().item(), output.detach()
-
 
 def sample_seeds(total_seeds, count):
     seeds = set()
@@ -104,6 +96,7 @@ def _sanitize_training_kwargs(args):
 
 def train(model, args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.training.learning_rate)
+    scaler = torch.cuda.amp.GradScaler()
     curriculum = Curriculum(args.training.curriculum)
 
     starting_step = 0
@@ -132,8 +125,6 @@ def train(model, args):
 
     num_training_examples = args.training.num_training_examples
 
-    scaler = torch.cuda.amp.GradScaler()  # Mixed precision
-
     for i in pbar:
         data_sampler_args = {}
         task_sampler_args = {}
@@ -159,7 +150,17 @@ def train(model, args):
 
         loss_func = task.get_training_metric()
         with torch.cuda.amp.autocast():
-            loss, output = train_step(model, xs, ys, optimizer, loss_func)
+            output = model(xs, ys)
+            loss = loss_func(output, ys)
+        
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        scaler.step(optimizer)
+        scaler.update()
+        
+        loss_item = loss.detach().item()
+        output = output.detach()
 
         point_wise_tags = list(range(curriculum.n_points))
         point_wise_loss_func = task.get_metric()
@@ -176,8 +177,8 @@ def train(model, args):
         if i % args.wandb.log_every_steps == 0 and not args.test_run:
             wandb.log(
                 {
-                    "overall_loss": loss,
-                    "excess_loss": loss / baseline_loss,
+                    "overall_loss": loss_item,
+                    "excess_loss": loss_item / baseline_loss,
                     "pointwise/loss": dict(
                         zip(point_wise_tags, point_wise_loss.cpu().numpy())
                     ),
@@ -188,7 +189,7 @@ def train(model, args):
             )
 
         curriculum.update()
-        pbar.set_description(f"loss {loss}")
+        pbar.set_description(f"loss {loss_item}")
 
         if i % args.training.save_every_steps == 0 and not args.test_run:
             training_state = {
