@@ -187,7 +187,9 @@ class BetaSampler(DataSampler):
         self.alpha = float(alpha)
         self.beta = float(beta)
 
-    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
+        alpha_t = torch.tensor(self.alpha, device=device)
+        beta_t = torch.tensor(self.beta, device=device)
         beta_dist = torch.distributions.Beta(concentration1=self.alpha, concentration0=self.beta)
         xs_b = _sample_distribution(beta_dist, b_size, (n_points, self.n_dims), seeds)
 

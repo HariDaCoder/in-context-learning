@@ -124,12 +124,6 @@ def get_relevant_baselines(task_name):
             (RidgeModel, {"alpha": 1.0}),
             (RidgeModel, {"alpha": 2.0}),
             (RidgeModel, {"alpha": 3.0}),
-            (RidgeModelWithVarianceAdjustment, {"alpha": 0.5, "ar_coef": 0.5}),
-            # (FeasibleGLSModel, {"ar_coef": None}),
-            # (GLSModel, {"ar_coef": 0.5}),
-            # (LADModel, {}),  # L1 Regression
-            # (HuberRegressionModel, {"epsilon": 1.35}),  # Huber Regression
-            # (CauchyMLEModel, {}),  # MLE cho Cauchy
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
         ],
