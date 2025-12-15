@@ -103,8 +103,10 @@ def _sanitize_training_kwargs(args):
 
 
 def train(model, args):
+    print("[TRAIN] Starting train function")
     optimizer = torch.optim.Adam(model.parameters(), lr=args.training.learning_rate)
     curriculum = Curriculum(args.training.curriculum)
+    print("[TRAIN] Curriculum initialized")
 
     starting_step = 0
     state_path = os.path.join(args.out_dir, "state.pt")
@@ -118,9 +120,11 @@ def train(model, args):
 
     n_dims = model.n_dims
     bsize = args.training.batch_size
+    print(f"[TRAIN] Getting data sampler for {args.training.data}")
     data_sampler = get_data_sampler(
         args.training.data, n_dims=n_dims, **getattr(args.training, "data_kwargs", {})
     )
+    print(f"[TRAIN] Getting task sampler for {args.training.task}")
     task_sampler = get_task_sampler(
         args.training.task,
         n_dims,
@@ -128,11 +132,13 @@ def train(model, args):
         num_tasks=args.training.num_tasks,
         **getattr(args.training, "task_kwargs", {})
     )
+    print("[TRAIN] Creating tqdm progress bar")
     pbar = tqdm(range(starting_step, args.training.train_steps))
 
     num_training_examples = args.training.num_training_examples
 
     scaler = torch.amp.GradScaler('cuda')  # Mixed precision
+    print("[TRAIN] Starting training loop")
 
     for i in pbar:
         data_sampler_args = {}
