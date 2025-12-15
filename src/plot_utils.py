@@ -41,7 +41,6 @@ relevant_model_names = {
         "Transformer",
         "Least Squares",
         "3-Nearest Neighbors",
-        "Ridge (alpha=0.1)",
         "Ridge (alpha=1.0)",
         "Ridge Var Adj (alpha=1.0, ar=0.5)",
         "Feasible GLS", 
@@ -51,7 +50,6 @@ relevant_model_names = {
     "noisy_linear_regression": [
         "Transformer",
         "Least Squares",
-        "Ridge (alpha=0.1)",
         "Ridge (alpha=1.0)",
         "Ridge Var Adj (alpha=1.0, ar=0.5)",
         "Feasible GLS", 
