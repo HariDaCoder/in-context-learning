@@ -124,8 +124,8 @@ class UniformHypersphereRegression(Task):
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)
         ys_linear = self.scale * (xs_b @ w_b)[:, :, 0] 
-        ys_b = ys_linear + torch.randn_like(ys_linear)
-        return ys_b
+        # ys_b = ys_linear + torch.randn_like(ys_linear)
+        return ys_linear
 
     @staticmethod
     def generate_pool_dict(n_dims, num_tasks):

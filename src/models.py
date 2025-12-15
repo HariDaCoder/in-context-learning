@@ -13,6 +13,7 @@ from joblib import Parallel, delayed
 import numpy as np
 
 from base_models import NeuralNetwork, ParallelNetworks
+from samplers import DataSampler
 
 
 def build_model(conf):
@@ -167,6 +168,8 @@ class TransformerModel(nn.Module):
     @staticmethod
     def _combine(xs_b, ys_b): # Create sequence context by interleaving x's and y's
         """Interleaves the x's and the y's into a single sequence."""
+        # Ensure both xs_b and ys_b are on the same device
+        xs_b = xs_b.to(ys_b.device)
         bsize, points, dim = xs_b.shape
         ys_b_wide = torch.cat(
             (
@@ -186,6 +189,8 @@ class TransformerModel(nn.Module):
             inds = torch.tensor(inds)
             if max(inds) >= ys.shape[1] or min(inds) < 0:
                 raise ValueError("inds contain indices where xs and ys are not defined")
+        # Ensure inds is on the same device as xs
+        inds = inds.to(xs.device)
         zs = self._combine(xs, ys)
         embeds = self._read_in(zs)
         output = self._backbone(inputs_embeds=embeds).last_hidden_state
@@ -1194,7 +1199,7 @@ class CauchyMLEModel:
         return torch.stack(preds, dim=1)
                         
 
-                xs_b[i] = torch.randn(n_points, self.n_dims, generator=generator, device=device)
+        xs_b[i] = torch.randn(n_points, self.n_dims, generator=generator, device=device)
         if self.scale is not None:
             xs_b = xs_b @ self.scale
         if self.bias is not None:

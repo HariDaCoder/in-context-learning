@@ -240,6 +240,181 @@ def plot_gradient_alignment(
     plt.show()
 
 
+def plot_learning_curve(run_path: str, use_log_scale: bool = True):
+    """
+    Plot learning curve: MSE vs context length k for Transformer, OLS, Ridge.
+    Load metrics from metrics.json file.
+    """
+    import json
+    import os
+    
+    metrics_path = os.path.join(run_path, "metrics.json")
+    if not os.path.exists(metrics_path):
+        print(f"Error: metrics.json not found at {metrics_path}")
+        return
+    
+    with open(metrics_path, "r") as f:
+        metrics = json.load(f)
+    
+    plt.figure(figsize=(10, 6))
+    
+    # Extract models from "standard" evaluation
+    if "standard" in metrics:
+        standard_eval = metrics["standard"]
+        ks = list(range(1, len(next(iter(standard_eval.values()))["mean"]) + 1))
+        
+        for model_name, data in standard_eval.items():
+            if isinstance(data, dict) and "mean" in data:
+                means = data["mean"]
+                plt.plot(ks, means, marker="o", label=model_name, lw=2, markersize=4)
+    
+    plt.xlabel("# in-context examples (k)")
+    plt.ylabel("MSE")
+    if use_log_scale:
+        plt.yscale("log")
+        plt.xscale("log")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_prediction_scatter(run_path: str, k: Optional[int] = None, num_samples: int = 500, seed: Optional[int] = None):
+    """
+    Plot prediction vs ground truth scatter plot.
+    Shows bias/shrinkage effects: Transformer vs OLS.
+    Generates predictions on-the-fly by evaluating on test data.
+    """
+    if seed is not None:
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+    
+    model, conf, data_sampler, task_sampler, device = _prepare(run_path)
+    
+    d = conf.model.n_dims
+    if k is None:
+        k = d  # Use k = d for visualization
+    
+    # Collect predictions from both Transformer and OLS
+    transformer_preds = []
+    ols_preds = []
+    y_true_list = []
+    
+    for i in range(num_samples):
+        task = task_sampler()
+        xs = data_sampler.sample_xs(n_points=k + 1, b_size=1).to(device)
+        ys = task.evaluate(xs).to(device)
+        
+        ctx_xs = xs[:, :k, :]
+        ctx_ys = ys[:, :k]
+        x_query = xs[:, k : k + 1, :]
+        y_query = ys[:, k : k + 1, 0]
+        
+        # Transformer prediction
+        xs_in = torch.cat([ctx_xs, x_query], dim=1)
+        ys_in = torch.cat([ctx_ys, torch.zeros_like(ctx_ys[:, :1])], dim=1)
+        with torch.no_grad():
+            transformer_pred = model(xs_in, ys_in, inds=[k]).cpu().numpy().flatten()
+        
+        # OLS prediction
+        X = ctx_xs[0].cpu().numpy()
+        y = ctx_ys[0, :, 0].cpu().numpy()
+        try:
+            w_ols = np.linalg.lstsq(X, y, rcond=None)[0]
+            x_q = x_query[0, 0].cpu().numpy()
+            ols_pred = np.dot(w_ols, x_q)
+        except:
+            ols_pred = np.array([0.0])
+        
+        transformer_preds.append(transformer_pred[0])
+        ols_preds.append(ols_pred if isinstance(ols_pred, (int, float)) else ols_pred[0])
+        y_true_list.append(y_query[0, 0].cpu().item())
+    
+    transformer_preds = np.array(transformer_preds)
+    ols_preds = np.array(ols_preds)
+    y_true = np.array(y_true_list)
+    
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    
+    models = [(transformer_preds, "Transformer", "red"), (ols_preds, "OLS", "blue")]
+    
+    for idx, (preds, name, color) in enumerate(models):
+        ax = axes[idx]
+        ax.scatter(y_true, preds, alpha=0.5, s=20, color=color)
+        
+        # Perfect prediction line
+        lim = [min(y_true.min(), preds.min()), max(y_true.max(), preds.max())]
+        ax.plot(lim, lim, "k--", lw=2, label="perfect")
+        
+        ax.set_xlabel("Ground Truth")
+        ax.set_ylabel("Prediction")
+        ax.set_title(f"{name} (k={k})")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_weight_recovery(run_path: str, num_prompts: int = 1280, seed: Optional[int] = None):
+    """
+    Plot histogram of cosine similarity between predicted weight and true weight.
+    Compares Transformer vs OLS weight recovery.
+    """
+    if seed is not None:
+        torch.manual_seed(seed)
+    
+    model, conf, data_sampler, task_sampler, device = _prepare(run_path)
+    
+    d = conf.model.n_dims
+    max_pts = conf.training.curriculum.points.end
+    k = d  # Use k = d for comparison
+    
+    transformer_sims = []
+    ols_sims = []
+    
+    for _ in range(num_prompts):
+        task = task_sampler()
+        w_true = _get_true_w(task)
+        if w_true is None:
+            continue
+        w_true = w_true.to(device)
+        
+        xs = data_sampler.sample_xs(n_points=k + 1, b_size=1).to(device)
+        ys = task.evaluate(xs).to(device)
+        
+        ctx_xs = xs[:, :k, :]
+        ctx_ys = ys[:, :k]
+        x_query = xs[:, k : k + 1, :].clone().detach().requires_grad_(True)
+        
+        # Transformer weight estimate via gradient
+        xs_in = torch.cat([ctx_xs, x_query], dim=1)
+        ys_in = torch.cat([ctx_ys, torch.zeros_like(ctx_ys[:, :1])], dim=1)
+        
+        pred = model(xs_in, ys_in, inds=[k])
+        grad_transformer = torch.autograd.grad(pred.sum(), x_query, retain_graph=False)[0].view(-1)
+        
+        # OLS weight estimate
+        X = ctx_xs[0]
+        y = ctx_ys[0, :, 0]
+        w_ols = torch.linalg.lstsq(X, y.unsqueeze(1)).solution.view(-1)
+        
+        transformer_sims.append(_cosine(grad_transformer, w_true))
+        ols_sims.append(_cosine(w_ols, w_true))
+    
+    plt.figure(figsize=(10, 6))
+    plt.hist(transformer_sims, bins=30, alpha=0.6, label="Transformer", color="red", density=True)
+    plt.hist(ols_sims, bins=30, alpha=0.6, label="OLS", color="blue", density=True)
+    
+    plt.xlabel("Cosine Similarity with true weight")
+    plt.ylabel("Density")
+    plt.title("Weight Recovery: Transformer vs OLS")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+
 def main(args: Optional[Sequence[str]] = None):
     parser = argparse.ArgumentParser(description="Reproduce Figure 3 diagnostics.")
     parser.add_argument("run_path", type=str, help="Path to a trained run directory.")
@@ -248,15 +423,25 @@ def main(args: Optional[Sequence[str]] = None):
     parser.add_argument("--seed", type=int, default=None, help="random seed")
     parser.add_argument("--no_fig3a", action="store_true", help="skip prefix-conditioned function plot")
     parser.add_argument("--no_fig3b", action="store_true", help="skip gradient alignment plot")
+    parser.add_argument("--learning_curve", action="store_true", help="plot learning curve vs context length")
+    parser.add_argument("--scatter", action="store_true", help="plot prediction vs ground truth scatter")
+    parser.add_argument("--weight_recovery", action="store_true", help="plot weight recovery histogram")
     parsed = parser.parse_args(args=args)
 
     if not parsed.no_fig3a:
         plot_prefix_conditioned_function(parsed.run_path, num_dirs=parsed.num_dirs, seed=parsed.seed)
     if not parsed.no_fig3b:
         plot_gradient_alignment(parsed.run_path, num_prompts=parsed.num_prompts, seed=parsed.seed)
+    if parsed.learning_curve:
+        plot_learning_curve(parsed.run_path)
+    if parsed.scatter:
+        plot_prediction_scatter(parsed.run_path, num_samples=parsed.num_prompts, seed=parsed.seed)
+    if parsed.weight_recovery:
+        plot_weight_recovery(parsed.run_path, num_prompts=parsed.num_prompts, seed=parsed.seed)
 
 
 if __name__ == "__main__":
     main()
 
 
+# python figure3_4.py <run_path> --learning_curve --scatter --weight_recovery
