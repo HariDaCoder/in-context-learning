@@ -25,7 +25,7 @@ training:
       interval: 2000
 
   # One of: gaussian, sparse_gaussian, ar1, vr1, ar2, vr2, nonstation
-  data: tstudent
+  data: gaussian
 
   # Data kwargs:
   # - When data == 'sparse_gaussian': you may set 'k' (number of non-zero coords).
@@ -46,7 +46,7 @@ training:
   # - When task == 'sparse_linear_regression': you may set 'sparsity'.
   # - For other tasks: any 'sparsity' key will be ignored automatically.
   task_kwargs:
-    noise_std: 2.0
+    noise_std: 1.0
     noise_type: normal
     w_distribution: gaussian
     w_kwargs:
@@ -60,12 +60,13 @@ training:
   save_every_steps: 100
   train_steps: 500001
 
-out_dir: /content/drive/MyDrive/models/lr_wx
+out_dir: D:\Henry-Projects\ChestXray\data\in-context-learning\models\noisy_linear_regression
+# out_dir: ../models/noisy_linear_regression
 
 wandb:
     project: "in-context-training"
     entity: "hai-trinh220970-ho-chi-minh-city-university-of-technology"
-    name: "lr_wx"
+    name: "noisy_linear_regression"
     notes: "Training with laplace-distributed weights (non-uniform on hypersphere)"
     log_every_steps: 100
 
