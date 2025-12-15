@@ -132,8 +132,6 @@ def train(model, args):
 
     num_training_examples = args.training.num_training_examples
 
-    scaler = torch.cuda.amp.GradScaler()  # Mixed precision
-
     for i in pbar:
         data_sampler_args = {}
         task_sampler_args = {}
@@ -152,18 +150,17 @@ def train(model, args):
             bsize,
             curriculum.n_dims_truncated,
             **data_sampler_args,
-            device="cuda"
         )
         task = task_sampler(**task_sampler_args)
         ys = task.evaluate(xs)
 
         loss_func = task.get_training_metric()
-        with torch.cuda.amp.autocast():
-            loss, output = train_step(model, xs, ys, optimizer, loss_func)
+
+        loss, output = train_step(model, xs.cuda(), ys.cuda(), optimizer, loss_func)
 
         point_wise_tags = list(range(curriculum.n_points))
         point_wise_loss_func = task.get_metric()
-        point_wise_loss = point_wise_loss_func(output, ys).mean(dim=0)
+        point_wise_loss = point_wise_loss_func(output, ys.cuda()).mean(dim=0)
 
         baseline_loss = (
             sum(

@@ -473,22 +473,22 @@ class NoisyLinearRegression(LinearRegression):
         elif self.noise_type == "laplace":
             scale_param = self.noise_std / math.sqrt(2.0)
             laplace_dist = torch.distributions.Laplace(loc=0, scale=scale_param)
-            noise = laplace_dist.sample(shape, device=device)
+            noise = laplace_dist.sample(shape).to(device)
         # 4.
         elif self.noise_type == "t-student":
             df = 3.0
             scale_param = self.noise_std / math.sqrt(df / (df-2.0))
             t_dist = torch.distributions.StudentT(df=df, loc=0, scale=scale_param)
-            noise = t_dist.sample(shape, device=device)
+            noise = t_dist.sample(shape).to(device)
         # 5.
         elif self.noise_type == "cauchy":
             scale_param = self.noise_std 
             cauchy_dist = torch.distributions.StudentT(df=1, loc=0, scale=scale_param)
-            noise = cauchy_dist.sample(shape, device=device)   
+            noise = cauchy_dist.sample(shape).to(device)   
         # 6.
         elif self.noise_type == "exponential":
             exp_noise = torch.distributions.Exponential(rate=1.0 / self.noise_std)
-            noise = exp_noise.sample(shape, device=device) - self.noise_std
+            noise = (exp_noise.sample(shape) - self.noise_std).to(device)
         # 7.
         elif self.noise_type == "rayleigh":
             lambda_param = self.noise_std / math.sqrt(2.0 - math.pi / 2.0)
@@ -508,13 +508,13 @@ class NoisyLinearRegression(LinearRegression):
             var = (alpha * beta) / (((alpha + beta) ** 2) * (alpha + beta + 1))
             std = math.sqrt(var)
             beta_dist = torch.distributions.Beta(concentration1=alpha, concentration0=beta)
-            X = beta_dist.sample(shape, device=device)
+            X = beta_dist.sample(shape).to(device)
             noise = (X - mean) / std * self.noise_std
         # 9.
         elif self.noise_type == "poisson":
             lam = 3.0
             poisson_noise = torch.distributions.Poisson(lam)
-            X = poisson_noise.sample(shape, device=device)
+            X = poisson_noise.sample(shape).to(device)
             scale_factor = self.noise_std / math.sqrt(lam)
             noise = (X - lam) * scale_factor     
         else:

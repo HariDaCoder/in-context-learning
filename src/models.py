@@ -13,6 +13,7 @@ from joblib import Parallel, delayed
 import numpy as np
 
 from base_models import NeuralNetwork, ParallelNetworks
+from samplers import DataSampler
 
 
 def build_model(conf):
@@ -1192,16 +1193,6 @@ class CauchyMLEModel:
         
         print(f"[{self.name}] Completed!")
         return torch.stack(preds, dim=1)
-                        
-
-                xs_b[i] = torch.randn(n_points, self.n_dims, generator=generator, device=device)
-        if self.scale is not None:
-            xs_b = xs_b @ self.scale
-        if self.bias is not None:
-            xs_b += self.bias
-        if n_dims_truncated is not None:
-            xs_b[:, :, n_dims_truncated:] = 0
-        return xs_b
 
 
 class BetaSampler(DataSampler):
