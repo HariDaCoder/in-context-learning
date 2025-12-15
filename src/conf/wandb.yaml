@@ -1,5 +1,5 @@
 wandb:
     project: in-context-training
-    entity: hai-trinh220970-ho-chi-minh-city-university-of-technology
+    entity: in-context  # Change to your W&B username/entity that you have access to
     notes:
     log_every_steps: 100
