@@ -184,13 +184,11 @@ class TransformerModel(nn.Module):
 
     def forward(self, xs, ys, inds=None):
         if inds is None:
-            inds = torch.arange(ys.shape[1])
+            inds = torch.arange(ys.shape[1], device=xs.device)
         else:
-            inds = torch.tensor(inds)
-            if max(inds) >= ys.shape[1] or min(inds) < 0:
+            inds = torch.tensor(inds, device=xs.device)
+            if inds.max().item() >= ys.shape[1] or inds.min().item() < 0:
                 raise ValueError("inds contain indices where xs and ys are not defined")
-        # Ensure inds is on the same device as xs
-        inds = inds.to(xs.device)
         zs = self._combine(xs, ys)
         embeds = self._read_in(zs)
         output = self._backbone(inputs_embeds=embeds).last_hidden_state

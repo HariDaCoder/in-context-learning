@@ -13,6 +13,7 @@ training:
     task: uniform_hypersphere_regression
     task_kwargs:
         scale: 1.0
+        normalize: true
     data: gaussian
     data_kwargs: {}
     curriculum:
