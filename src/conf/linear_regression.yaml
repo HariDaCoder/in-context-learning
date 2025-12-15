@@ -10,7 +10,9 @@ training:
             inc: 2
             interval: 2000
 
-out_dir: ../models/linear_regression
+# out_dir: ../models/linear_regression
+out_dir: D:\Henry-Projects\ChestXray\data\in-context-learning\models\linear_regression
+
 
 wandb:
     name: "linear_regression_standard"

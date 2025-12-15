@@ -103,10 +103,13 @@ def _sanitize_training_kwargs(args):
 
 
 def train(model, args):
-    print("[TRAIN] Starting train function")
+    # Determine device - can override with --cpu_only flag
+    use_cpu = getattr(args, 'cpu_only', False)
+    device = "cpu" if use_cpu else ("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    
     optimizer = torch.optim.Adam(model.parameters(), lr=args.training.learning_rate)
     curriculum = Curriculum(args.training.curriculum)
-    print("[TRAIN] Curriculum initialized")
 
     starting_step = 0
     state_path = os.path.join(args.out_dir, "state.pt")
@@ -121,24 +124,23 @@ def train(model, args):
     n_dims = model.n_dims
     bsize = args.training.batch_size
     print(f"[TRAIN] Getting data sampler for {args.training.data}")
+    data_kwargs = getattr(args.training, "data_kwargs", {}) or {}
     data_sampler = get_data_sampler(
-        args.training.data, n_dims=n_dims, **getattr(args.training, "data_kwargs", {})
+        args.training.data, n_dims=n_dims, **data_kwargs
     )
     print(f"[TRAIN] Getting task sampler for {args.training.task}")
+    task_kwargs = getattr(args.training, "task_kwargs", {}) or {}
     task_sampler = get_task_sampler(
         args.training.task,
         n_dims,
         bsize,
         num_tasks=args.training.num_tasks,
-        **getattr(args.training, "task_kwargs", {})
+        **task_kwargs
     )
     print("[TRAIN] Creating tqdm progress bar")
     pbar = tqdm(range(starting_step, args.training.train_steps))
 
     num_training_examples = args.training.num_training_examples
-
-    scaler = torch.amp.GradScaler('cuda')  # Mixed precision
-    print("[TRAIN] Starting training loop")
 
     for i in pbar:
         data_sampler_args = {}
@@ -158,7 +160,7 @@ def train(model, args):
             bsize,
             curriculum.n_dims_truncated,
             **data_sampler_args,
-            device="cuda"
+            device=device
         )
         task = task_sampler(**task_sampler_args)
         ys = task.evaluate(xs)
@@ -166,8 +168,8 @@ def train(model, args):
         ys = ys.to(xs.device)
 
         loss_func = task.get_training_metric()
-        with torch.amp.autocast('cuda'):
-            loss, output = train_step(model, xs, ys, optimizer, loss_func)
+        # Disable mixed precision for now - testing numeric stability
+        loss, output = train_step(model, xs, ys, optimizer, loss_func)
 
         point_wise_tags = list(range(curriculum.n_points))
         point_wise_loss_func = task.get_metric()
@@ -232,7 +234,11 @@ def main(args):
         )
 
     model = build_model(args.model)
-    model.cuda()
+    
+    # Check if we should use CUDA
+    use_cuda = torch.cuda.is_available() and not getattr(args, 'cpu_only', False)
+    device = "cuda" if use_cuda else "cpu"
+    model = model.to(device)
     model.train()
 
     train(model, args)

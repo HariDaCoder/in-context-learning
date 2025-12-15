@@ -421,7 +421,8 @@ class NoisyLinearRegression(LinearRegression):
         def to_val(val):
             return torch.tensor(val, device=device) if not torch.is_tensor(val) else val.to(device)
         if self.w_distribution == "gaussian":
-            return torch.randn(shape, generator=generator, device=device)
+            scale = self.w_kwargs.get("scale", 1.0)
+            return scale * torch.randn(shape, generator=generator, device=device)
         elif self.w_distribution == "uniform":
             low = self.w_kwargs.get("low", -1.0)
             high = self.w_kwargs.get("high", 1.0)

@@ -57,11 +57,11 @@ TASK_LIST = [
 
 training_schema = {
     "task": merge(tstring, allowed(TASK_LIST)),
-    "task_kwargs": merge(stdict({}), nullable),
+    "task_kwargs": merge(tdict, nullable),
     "num_tasks": merge(tinteger, nullable, default(None)),
     "num_training_examples": merge(tinteger, nullable, default(None)),
     "data": merge(tstring, allowed(["gaussian","ar1","vr1","ar2",'vr2',"nonstation", "sparse_gaussian", "gamma", "beta", "exponential", "laplace", "uniform", "poisson", "tstudent", "rayleigh", "cauchy"])),
-    "data_kwargs": merge(stdict({}), nullable),
+    "data_kwargs": merge(tdict, nullable),
     "batch_size": merge(tinteger, default(64)),
     "learning_rate": merge(tfloat, default(3e-4)),
     "train_steps": merge(tinteger, default(1000)),
@@ -85,4 +85,5 @@ schema = {
     "training": stdict(training_schema),
     "wandb": stdict(wandb_schema),
     "test_run": merge(tboolean, default(False)),
+    "cpu_only": merge(tboolean, default(False)),
 }

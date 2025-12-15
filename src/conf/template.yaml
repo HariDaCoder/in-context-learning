@@ -46,7 +46,7 @@ training:
   # - When task == 'sparse_linear_regression': you may set 'sparsity'.
   # - For other tasks: any 'sparsity' key will be ignored automatically.
   task_kwargs:
-    noise_std: 1.0
+    noise_std: 0.0
     noise_type: normal
     w_distribution: gaussian
     w_kwargs:
