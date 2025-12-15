@@ -168,6 +168,8 @@ class TransformerModel(nn.Module):
     @staticmethod
     def _combine(xs_b, ys_b): # Create sequence context by interleaving x's and y's
         """Interleaves the x's and the y's into a single sequence."""
+        # Ensure both xs_b and ys_b are on the same device
+        xs_b = xs_b.to(ys_b.device)
         bsize, points, dim = xs_b.shape
         ys_b_wide = torch.cat(
             (
@@ -182,10 +184,10 @@ class TransformerModel(nn.Module):
 
     def forward(self, xs, ys, inds=None):
         if inds is None:
-            inds = torch.arange(ys.shape[1])
+            inds = torch.arange(ys.shape[1], device=xs.device)
         else:
-            inds = torch.tensor(inds)
-            if max(inds) >= ys.shape[1] or min(inds) < 0:
+            inds = torch.tensor(inds, device=xs.device)
+            if inds.max().item() >= ys.shape[1] or inds.min().item() < 0:
                 raise ValueError("inds contain indices where xs and ys are not defined")
         zs = self._combine(xs, ys)
         embeds = self._read_in(zs)
@@ -1193,6 +1195,16 @@ class CauchyMLEModel:
         
         print(f"[{self.name}] Completed!")
         return torch.stack(preds, dim=1)
+                        
+
+        xs_b[i] = torch.randn(n_points, self.n_dims, generator=generator, device=device)
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
 
 
 class BetaSampler(DataSampler):

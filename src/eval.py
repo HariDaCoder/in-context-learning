@@ -505,7 +505,11 @@ def read_run_dir(run_dir):
         task_dir = os.path.join(run_dir, task)
         for run_id in os.listdir(task_dir):
             run_path = os.path.join(task_dir, run_id)
-            _, conf = get_model_from_run(run_path, only_conf=True)
+            try:
+                _, conf = get_model_from_run(run_path, only_conf=True)
+            except FileNotFoundError:
+                print(f"Skipping run {run_id} - config.yaml not found")
+                continue
             params = {}
             params["run_id"] = run_id
             params["task"] = task
