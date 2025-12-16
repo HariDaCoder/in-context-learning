@@ -1,5 +1,5 @@
 wandb:
     project: in-context-training
-    entity: your-entity
+    entity: haitrinh220970-hcmut
     notes:
     log_every_steps: 100
