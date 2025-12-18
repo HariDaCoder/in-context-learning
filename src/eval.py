@@ -197,6 +197,44 @@ def build_evals(conf):
     task_name = conf.training.task
     data_name = conf.training.data
 
+    # Sanitize kwargs to avoid passing unsupported keys during evaluation
+    data_whitelist = {
+        "gaussian": {"bias", "scale"},
+        "sparse_gaussian": {"k", "bias", "scale"},
+        "ar1": {"rho", "noise_std", "bias", "scale", "compute_gradient"},
+        "vr1": {"ar1_mat", "noise_std", "bias", "scale"},
+        "ar2": {"ar1_coef", "ar2_coef", "noise_std", "bias", "scale"},
+        "vr2": {"ar1_mat", "ar2_mat", "noise_std", "bias", "scale"},
+        "nonstation": {"coef_base", "coef_amplitude", "noise_std", "bias", "scale"},
+        "exponential": {"bias", "scale", "rate"},
+        "laplace": {"bias", "scale", "loc", "laplace_scale"},
+        "gamma": {"bias", "scale", "concentration", "rate"},
+        "beta": {"bias", "scale", "alpha", "beta"},
+        "uniform": {"bias", "scale", "low", "high"},
+    }
+    task_whitelist = {
+        "linear_regression": {"scale", "uniform"},
+        "sparse_linear_regression": {"scale", "sparsity", "valid_coords"},
+        "linear_classification": {"scale", "uniform"},
+        "relu_2nn_regression": {"scale", "hidden_layer_size"},
+        "decision_tree": {"depth"},
+        "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform", "w_distribution", "w_kwargs"},
+        "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
+        "uniform_hypersphere_regression": {"scale"},
+        "linear_regression": {"scale", "uniform"},
+        "sparse_linear_regression": {"scale", "sparsity", "valid_coords"},
+        "sparse_regression_killer": {"scale", "k_sparse"},
+        "heavy_tail_noise_killer": {"scale", "noise_type", "df", "noise_scale"},
+        "bounded_support_killer": {"scale", "rate"},
+        "mixture_tasks_killer": {"scale"},
+        "transfer_tradeoff_task": {"scale", "prior_type", "mixture_std"},
+    
+    }
+    original_data_kwargs = conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {}
+    original_task_kwargs = conf.training.task_kwargs if hasattr(conf.training, "task_kwargs") else {}
+    cleaned_data_kwargs = {k: v for k, v in (original_data_kwargs or {}).items() if k in data_whitelist.get(data_name, set())}
+    cleaned_task_kwargs = {k: v for k, v in (original_task_kwargs or {}).items() if k in task_whitelist.get(task_name, set())}
+
     base_kwargs = {
         "task_name": task_name,
         "n_dims": n_dims,
@@ -204,19 +242,30 @@ def build_evals(conf):
         "batch_size": batch_size,
         "data_name": data_name,
         "prompting_strategy": "standard",
+        # "data_sampler_kwargs": conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {},
+        # "task_sampler_kwargs": conf.training.task_kwargs
+        "data_sampler_kwargs": cleaned_data_kwargs,
+        "task_sampler_kwargs": cleaned_task_kwargs
     }
 
     evaluation_kwargs = {}
 
     evaluation_kwargs["standard"] = {"prompting_strategy": "standard"}
-    if task_name != "linear_regression":
-        if task_name in ["relu_2nn_regression"]:
-            evaluation_kwargs["linear_regression"] = {"task_name": "linear_regression"}
-        for name, kwargs in evaluation_kwargs.items():
-            # allow kwargs to override base_kwargs values
-            evaluation_kwargs[name] = base_kwargs.copy()
-            evaluation_kwargs[name].update(kwargs)
-        return evaluation_kwargs
+    # evaluation_kwargs["gradient"] = {
+    #     "prompting_strategy": "standard",
+    #     # "task_sampler_kwargs": {"compute_gradient": True}
+    # }
+    
+    # task_name =["linear_regression" if task_name == "ar1_linear_regression" else task_name][0]
+    if task_name not in ["linear_regression", "ar1_linear_regression"]:
+        if task_name != "linear_regression":
+            if task_name in ["relu_2nn_regression"]:
+                evaluation_kwargs["linear_regression"] = {"task_name": "linear_regression"}
+            for name, kwargs in evaluation_kwargs.items():
+                # allow kwargs to override base_kwargs values
+                evaluation_kwargs[name] = base_kwargs.copy()
+                evaluation_kwargs[name].update(kwargs)
+            return evaluation_kwargs
 
     for strategy in [
         "random_quadrants",
@@ -254,12 +303,59 @@ def build_evals(conf):
         "task_name": "noisy_linear_regression",
     }
 
+    # Case 1: Scale Mismatch OOD test
+    if conf.training.task == "scale_mismatch_killer":
+        evaluation_kwargs = {}
+        # Standard eval (in-distribution)
+        evaluation_kwargs["standard"] = base_kwargs.copy()
+        # OOD eval: w ~ N(100, 1)
+        ood_kwargs = base_kwargs.copy()
+        ood_kwargs["task_sampler_kwargs"] = dict(base_kwargs.get("task_sampler_kwargs", {}))
+        ood_kwargs["task_sampler_kwargs"]["train_mode"] = False
+        evaluation_kwargs["ood_scale_mismatch"] = ood_kwargs
+        return evaluation_kwargs
+
+    # Case 2: Over-Skeptic OOD test
+    if conf.training.task == "noisy_linear_regression" and conf.training.task_kwargs.get("noise_std", 0) >= 20:
+        evaluation_kwargs = {}
+        # Standard eval (noisy)
+        evaluation_kwargs["standard"] = base_kwargs.copy()
+        # OOD eval: linear regression, no noise
+        ood_kwargs = base_kwargs.copy()
+        ood_kwargs["task_name"] = "linear_regression"
+        ood_kwargs["task_sampler_kwargs"] = {}
+        evaluation_kwargs["ood_clean"] = ood_kwargs
+        return evaluation_kwargs
+    # Case 3: Anti-Sparsity Trap (Train sparse, eval densee)
+    if conf.training.task == "sparse_linear_regression" and conf.training.task_kwargs.get("sparsity", 0) <= 2:
+        evaluation_kwargs = {}
+        evaluation_kwargs = {}
+        # Standard eval (mixed)
+        evaluation_kwargs["standard"] = base_kwargs.copy()
+        # OOD eval: linear regression only
+        ood_kwargs = base_kwargs.copy()
+        ood_kwargs["task_name"] = "linear_regression"
+        ood_kwargs["task_sampler_kwargs"] = {}
+        evaluation_kwargs["ood_linear"] = ood_kwargs
+        return evaluation_kwargs
+    # Case 4: Task Confusion (Train mixed, eval linear)
+    if conf.training.task == "mixture_tasks_killer":
+        evaluation_kwargs = {}
+        # Standard eval (mixed)
+        evaluation_kwargs["standard"] = base_kwargs.copy()
+        # OOD eval: linear regression only
+        ood_kwargs = base_kwargs.copy()
+        ood_kwargs["task_name"] = "linear_regression"
+        ood_kwargs["task_sampler_kwargs"] = {}
+        evaluation_kwargs["ood_linear"] = ood_kwargs
+        return evaluation_kwargs
     for name, kwargs in evaluation_kwargs.items():
         # allow kwargs to override base_kwargs values
         evaluation_kwargs[name] = base_kwargs.copy()
         evaluation_kwargs[name].update(kwargs)
 
     return evaluation_kwargs
+
 
 
 def compute_evals(all_models, evaluation_kwargs, save_path=None, recompute=False):

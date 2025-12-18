@@ -33,6 +33,11 @@ def get_relevant_baselines(task_name):
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
         ],
+        "noisy_linear_regression": [
+            (LeastSquaresModel, {}),
+            (NNModel, {"n_neighbors": 3}),
+            (AveragingModel, {}),
+        ],
         "linear_classification": [
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),

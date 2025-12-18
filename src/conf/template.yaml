@@ -11,7 +11,7 @@ model:
   n_positions: 101
 
 training:
-  batch_size: 64
+  batch_size: 128
   curriculum:
     dims:
       start: 5
@@ -25,11 +25,16 @@ training:
       interval: 2000
 
   # One of: gaussian, sparse_gaussian, ar1, vr1, ar2, vr2, nonstation
-  data: gaussian
+  data: exponential
 
   # Data kwargs:
   # - When data == 'sparse_gaussian': you may set 'k' (number of non-zero coords).
   # - For other data values: any 'k' key will be ignored automatically.
+  data_kwargs: {
+    # k: 8        # only when data: sparse_gaussian
+    # scale: 1.0  # optional for many samplers
+  }
+
   # Task: choose a base task
   # One of: linear_regression, sparse_linear_regression, linear_classification,
   #         relu_2nn_regression, decision_tree, noisy_linear_regression,
@@ -40,21 +45,27 @@ training:
   # Task kwargs:
   # - When task == 'sparse_linear_regression': you may set 'sparsity'.
   # - For other tasks: any 'sparsity' key will be ignored automatically.
-  task_kwargs: {}
+  task_kwargs:
+    noise_std: 2.0
+    noise_type: poisson
+    w_distribution: laplace
+    w_kwargs:
+      scale: 1.0
+
   learning_rate: 0.0001
   keep_every_steps: 10000
   num_tasks: null
   num_training_examples: null
   resume_id: null
   save_every_steps: 100
-  train_steps: 100001
+  train_steps: 500001
 
-out_dir: ../models/linear_regression
+out_dir: ../models/noisy_linear_regression
 # out_dir: ../models/noisy_linear_regression
 
 wandb:
     project: "in-context-training"
-    name: "noisy_linear_regression test with new task on old code with noise_std = 1 " 
+    name: "data expo noise poisson w laplace with 500k step"
     notes: "Training with laplace-distributed weights (non-uniform on hypersphere)"
     log_every_steps: 100
 
