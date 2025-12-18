@@ -169,7 +169,6 @@ class LinearClassification(LinearRegression):
     def get_training_metric():
         return cross_entropy
 
-
 class NoisyLinearRegression(LinearRegression):
     def __init__(
         self,
@@ -178,24 +177,170 @@ class NoisyLinearRegression(LinearRegression):
         pool_dict=None,
         seeds=None,
         scale=1,
-        noise_std=0,
+        noise_std=0.0,
         renormalize_ys=False,
+        noise_type="normal",  # "normal", "uniform", "laplace", "t-student", "cauchy", "exponential", "rayleigh", "beta", "poisson"        
+        w_distribution="gaussian",
+        w_kwargs=None,
+        uniform=False,
     ):
-        """noise_std: standard deviation of noise added to the prediction."""
         super(NoisyLinearRegression, self).__init__(
-            n_dims, batch_size, pool_dict, seeds, scale
+            n_dims, batch_size, pool_dict, seeds, scale, uniform
         )
-        self.noise_std = noise_std
+        self.noise_std = float(noise_std)
         self.renormalize_ys = renormalize_ys
+        self.noise_type = noise_type.lower()
+        self.w_distribution = w_distribution.lower()
+        self.w_kwargs = w_kwargs or {}
+        self.w_b = self._compose_weights(pool_dict, seeds)
+
+    def _compose_weights(self, pool_dict, seeds):
+        target_shape = (self.b_size, self.n_dims, 1)
+        if pool_dict is not None:
+            indices = torch.randperm(len(pool_dict["w"]))[: self.b_size]
+            return pool_dict["w"][indices]
+        
+        if seeds is None:
+            return self._sample_distribution(target_shape, generator=None)
+        w_b = torch.zeros(target_shape)
+        for i, seed in enumerate(seeds):
+            gen = torch.Generator().manual_seed(int(seed))
+            w_b[i] = self._sample_distribution((1, self.n_dims, 1), generator=gen).squeeze(0)
+        return w_b
+        
+    def _sample_distribution(self, shape, generator=None, device='cpu'):
+        def to_val(val):
+            return torch.tensor(val, device=device) if not torch.is_tensor(val) else val.to(device)
+        if self.w_distribution == "gaussian":
+            scale = self.w_kwargs.get("scale", 1.0)
+            return scale * torch.randn(shape, generator=generator, device=device)
+        elif self.w_distribution == "uniform":
+            low = self.w_kwargs.get("low", -1.0)
+            high = self.w_kwargs.get("high", 1.0)
+            return torch.empty(shape, generator=generator, device=device).uniform_(low, high)
+        elif self.w_distribution == "laplace":
+            scale = self.w_kwargs.get("scale", 1.0)
+            laplace_dist = torch.distributions.Laplace(loc=0.0, scale=scale)
+            return laplace_dist.sample(shape, generator=generator, device=device)
+        elif self.w_distribution == "exponential":
+            rate = self.w_kwargs.get("rate", 1.0)
+            exp_dist = torch.distributions.Exponential(rate=rate)
+            return exp_dist.sample(shape, generator=generator, device=device)
+        elif self.w_distribution == "beta":
+            alpha = self.w_kwargs.get("alpha", 2.0)
+            beta = self.w_kwargs.get("beta", 5.0)
+            beta_dist = torch.distributions.Beta(concentration1=alpha, concentration0=beta)
+            return beta_dist.sample(shape, generator=generator, device=device)
+        elif self.w_distribution == "poisson":
+            rate = self.w_kwargs.get("rate", 3.0)
+            dist = torch.distributions.Poisson(rate=rate)
+            return dist.sample(shape, generator=generator, device=device)
+        elif self.w_distribution == "cauchy":
+            scale = self.w_kwargs.get("scale", 1.0)
+            cauchy_dist = torch.distributions.StudentT(df=1, loc=0.0, scale=scale)
+            return cauchy_dist.sample(shape, generator=generator, device=device)
+        elif self.w_distribution == "t-student":
+            df = self.w_kwargs.get("df", 3.0)
+            scale = self.w_kwargs.get("scale", 1.0)
+            t_dist = torch.distributions.StudentT(df=df, loc=0.0, scale=scale)
+            return t_dist.sample(shape, generator=generator, device=device)
+        elif self.w_distribution == "rayleigh":
+            lambda_param = self.w_kwargs.get("lambda_param", 1.0)
+            sigma = lambda_param
+            X = torch.randn(shape, generator=generator, device=device) * sigma
+            Y = torch.randn(shape, generator=generator, device=device) * sigma
+            R = torch.sqrt(X**2 + Y**2)
+            return R
+        else: 
+            raise ValueError(f"Unsupported weight distribution: {self.w_distribution}")
+    def sample_noise(self, shape, device='cpu'):
+        # 1.
+        if self.noise_type == "normal":
+            noise = torch.randn(shape, device=device) * self.noise_std
+        # 2.
+        elif self.noise_type == "uniform":
+            a = math.sqrt(3) * self.noise_std
+            noise = torch.empty(shape, device=device).uniform_(-a, a)
+        # 3.
+        elif self.noise_type == "laplace":
+            scale_param = self.noise_std / math.sqrt(2.0)
+            laplace_dist = torch.distributions.Laplace(loc=0, scale=scale_param)
+            noise = laplace_dist.sample(shape, device=device)
+        # 4.
+        elif self.noise_type == "t-student":
+            df = 3.0
+            scale_param = self.noise_std / math.sqrt(df / (df-2.0))
+            t_dist = torch.distributions.StudentT(df=df, loc=0, scale=scale_param)
+            noise = t_dist.sample(shape, device=device)
+        # 5.
+        elif self.noise_type == "cauchy":
+            scale_param = self.noise_std 
+            cauchy_dist = torch.distributions.StudentT(df=1, loc=0, scale=scale_param)
+            noise = cauchy_dist.sample(shape, device=device)   
+        # 6.
+        elif self.noise_type == "exponential":
+            exp_noise = torch.distributions.Exponential(rate=1.0 / self.noise_std)
+            noise = exp_noise.sample(shape, device=device) - self.noise_std
+        # 7.
+        elif self.noise_type == "rayleigh":
+            lambda_param = self.noise_std / math.sqrt(2.0 - math.pi / 2.0)
+            # R = sqrt(X^2 + Y^2) với X, Y ~ N(0, sigma^2), 
+            # where sigma = lambda_param.
+            sigma = lambda_param
+
+            X = torch.randn(shape, device=device) * sigma
+            Y = torch.randn(shape, device=device) * sigma
+            R = torch.sqrt(X**2 + Y**2)
+            mean = lambda_param * math.sqrt(math.pi / 2.0)
+            noise = R - mean
+        # 8.
+        elif self.noise_type == "beta":
+            alpha, beta = 2.0, 5.0
+            mean = alpha / (alpha + beta)
+            var = (alpha * beta) / (((alpha + beta) ** 2) * (alpha + beta + 1))
+            std = math.sqrt(var)
+            beta_dist = torch.distributions.Beta(concentration1=alpha, concentration0=beta)
+            X = beta_dist.sample(shape, device=device)
+            noise = (X - mean) / std * self.noise_std
+        # 9.
+        elif self.noise_type == "poisson":
+            lam = 3.0
+            poisson_noise = torch.distributions.Poisson(lam)
+            X = poisson_noise.sample(shape, device=device)
+            scale_factor = self.noise_std / math.sqrt(lam)
+            noise = (X - lam) * scale_factor     
+        else:
+            raise ValueError(f"Unsupported noise type: {self.noise_type}")
+        return noise
 
     def evaluate(self, xs_b):
         ys_b = super().evaluate(xs_b)
-        ys_b_noisy = ys_b + torch.randn_like(ys_b) * self.noise_std
+        noise = self.sample_noise(ys_b.shape, device=ys_b.device)
+        ys_b_noisy = ys_b + noise
+
         if self.renormalize_ys:
             ys_b_noisy = ys_b_noisy * math.sqrt(self.n_dims) / ys_b_noisy.std()
-
         return ys_b_noisy
 
+    def get_training_metric(self):
+        """
+        Use robust loss for heavy-tailed noise (Cauchy, t-student) to handle outliers.
+        For normal/uniform noise, use standard MSE.
+        """
+        if self.noise_type in ["cauchy", "t-student"]:
+            # Use Huber loss for heavy-tailed distributions (robust to outliers)
+            # Huber loss is less sensitive to outliers than MSE
+            def robust_loss(ys_pred, ys):
+                return huber_loss(ys_pred, ys, delta=1.35)
+            return robust_loss
+        elif self.noise_type == "laplace":
+            # Laplace noise: use L1-like loss (MAE) which is more robust
+            def laplace_loss(ys_pred, ys):
+                return torch.abs(ys - ys_pred).mean()
+            return laplace_loss
+        else:
+            # For normal, uniform, and other noise types, use standard MSE
+            return mean_squared_error
 
 class QuadraticRegression(LinearRegression):
     def evaluate(self, xs_b):
