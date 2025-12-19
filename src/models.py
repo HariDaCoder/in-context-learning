@@ -35,6 +35,11 @@ def get_relevant_baselines(task_name):
         ],
         "noisy_linear_regression": [
             (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.1}),
+            (RidgeModel, {"alpha": 0.5}),
+            (RidgeModel, {"alpha": 1.0}),
+            (RidgeModel, {"alpha": 2.0}),
+            (RidgeModel, {"alpha": 3.0}),
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
         ],
@@ -478,5 +483,50 @@ class XGBoostModel:
                     pred[j] = y_pred[0].item()
 
             preds.append(pred)
+
+        return torch.stack(preds, dim=1)
+class RidgeModel:
+    def __init__(self, alpha=1.0):
+        """
+        Ridge regression model with L2 regularization.
+        alpha: regularization strength (larger values = more regularization)
+        """
+        self.alpha = alpha
+        self.name = f"ridge_alpha={alpha}"
+
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
+
+        preds = []
+
+        for i in inds:
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:, 0]))  # predict zero for first point
+                continue
+            train_xs, train_ys = xs[:, :i], ys[:, :i]
+            test_x = xs[:, i : i + 1]
+
+            # Ridge regression: (X'X + alpha*I)^(-1) X'y
+            # Add regularization term to diagonal
+            XtX = train_xs.transpose(-2, -1) @ train_xs
+            Xty = train_xs.transpose(-2, -1) @ train_ys.unsqueeze(-1)
+            
+            # Add alpha * I to diagonal
+            reg_matrix = XtX + self.alpha * torch.eye(XtX.shape[-1], device=XtX.device)
+            
+            try:
+                ws = torch.linalg.solve(reg_matrix, Xty)
+                pred = test_x @ ws
+                preds.append(pred[:, 0, 0])
+            except torch.linalg.LinAlgError:
+                # Fallback to least squares if singular
+                ws, _, _, _ = torch.linalg.lstsq(train_xs, train_ys.unsqueeze(2))
+                pred = test_x @ ws
+                preds.append(pred[:, 0, 0])
 
         return torch.stack(preds, dim=1)

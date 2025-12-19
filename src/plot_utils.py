@@ -37,6 +37,17 @@ relevant_model_names = {
         "3-Nearest Neighbors",
         "2-layer NN, GD",
     ],
+    "noisy_linear_regression": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.1)",
+        "Ridge (alpha=0.5)",
+        "Ridge (alpha=1.0)",
+        "Ridge (alpha=2.0)",
+        "Ridge (alpha=3.0)",
+        "3-Nearest Neighbors",
+        "Averaging"
+    ],
 }
 
 
