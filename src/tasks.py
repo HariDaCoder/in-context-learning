@@ -60,6 +60,7 @@ def get_task_sampler(
         "quadratic_regression": QuadraticRegression,
         "relu_2nn_regression": Relu2nnRegression,
         "decision_tree": DecisionTree,
+        "uniform_hypersphere_regression": UniformHypersphereRegression,
     }
     if task_name in task_names_to_classes:
         task_cls = task_names_to_classes[task_name]
@@ -72,7 +73,47 @@ def get_task_sampler(
         print("Unknown task")
         raise NotImplementedError
 
+class UniformHypersphereRegression(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1):
+        super(UniformHypersphereRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
 
+        if pool_dict is None and seeds is None:
+            w_b = torch.randn(self.b_size, self.n_dims, 1)  
+            self.w_b = w_b / w_b.norm(dim=1, keepdim=True)
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            assert len(seeds) == self.b_size
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                w = torch.randn(self.n_dims, 1, generator=generator)
+                self.w_b[i] = w / torch.norm(w)
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0] 
+        # ys_b = ys_linear + torch.randn_like(ys_linear)
+        return ys_linear
+
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks):
+        w = torch.randn(num_tasks, n_dims, 1)
+        w_normalized = w / torch.norm(w, dim=1, keepdim=True)
+        return {"w": w_normalized}
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+    
 class LinearRegression(Task):
     def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, uniform=False):
         """scale: a constant by which to scale the randomly sampled weights."""

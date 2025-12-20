@@ -33,6 +33,16 @@ def get_relevant_baselines(task_name):
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
         ],
+        "uniform_hypersphere_regression": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 0.1}),
+            (RidgeModel, {"alpha": 0.5}),
+            (RidgeModel, {"alpha": 1.0}),
+            (RidgeModel, {"alpha": 2.0}),
+            (RidgeModel, {"alpha": 3.0}),
+            (NNModel, {"n_neighbors": 3}),
+            (AveragingModel, {}),
+        ],
         "noisy_linear_regression": [
             (LeastSquaresModel, {}),
             (RidgeModel, {"alpha": 0.1}),

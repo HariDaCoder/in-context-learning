@@ -48,6 +48,17 @@ relevant_model_names = {
         "3-Nearest Neighbors",
         "Averaging"
     ],
+    "uniform_hypersphere_regression": [
+        "Transformer",
+        "Least Squares",
+        "Ridge (alpha=0.1)",
+        "Ridge (alpha=0.5)",
+        "Ridge (alpha=1.0)",
+        "Ridge (alpha=2.0)",
+        "Ridge (alpha=3.0)",
+        "3-Nearest Neighbors",
+        "Averaging",
+    ],
 }
 
 
