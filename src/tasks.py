@@ -6,6 +6,11 @@ import torch
 def squared_error(ys_pred, ys):
     return (ys - ys_pred).square()
 
+def absolute_error(ys_pred, ys):
+    return (ys - ys_pred).abs()
+
+def mean_absolute_error(ys_pred, ys):
+    return (ys - ys_pred).abs().mean()
 
 def mean_squared_error(ys_pred, ys):
     return (ys - ys_pred).square().mean()
@@ -295,7 +300,14 @@ class NoisyLinearRegression(LinearRegression):
             Y = torch.randn(shape, generator=generator) * sigma
             R = torch.sqrt(X**2 + Y**2)
             return R.to(device)
-            return R
+        elif self.w_distribution == "bernoulli":
+            p = self.w_kwargs.get("p", 0.5)
+            if not (0 <= p <= 1):
+                raise ValueError(f"For Bernoulli distribution, p must be between 0 and 1, got {p}")
+            bernoulli_dist = torch.distributions.Bernoulli(probs=p)
+            X = bernoulli_dist.sample(shape).to(device)
+            # Center around 0: (0 or 1) -> (-p or 1-p), standardized by sqrt(p*(1-p))
+            return (X - p) / math.sqrt(p * (1 - p)) if p != 0 and p != 1 else X.to(device)
         else: 
             raise ValueError(f"Unsupported weight distribution: {self.w_distribution}")
     def sample_noise(self, shape, device='cpu'):
@@ -353,7 +365,16 @@ class NoisyLinearRegression(LinearRegression):
             poisson_noise = torch.distributions.Poisson(lam)
             X = poisson_noise.sample(shape).to(device)
             scale_factor = self.noise_std / math.sqrt(lam)
-            noise = (X - lam) * scale_factor     
+            noise = (X - lam) * scale_factor
+        #10 
+        elif self.noise_type == "bernoulli":
+            p = self.noise_std # probability parameter (0 to 1)
+            if not (0 <= p <= 1):
+                raise ValueError(f"For Bernoulli noise, noise_std must be between 0 and 1, got {p}")
+            bernoulli_dist = torch.distributions.Bernoulli(probs=p)
+            X = bernoulli_dist.sample(shape).to(device)
+            # Center around 0: X is 0 or 1, so (X - 0.5) * 2 gives -1 or 1
+            noise = (X - p) / math.sqrt(p * (1 - p))
         else:
             raise ValueError(f"Unsupported noise type: {self.noise_type}")
         return noise

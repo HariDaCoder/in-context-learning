@@ -3,10 +3,12 @@ import torch.nn as nn
 from transformers import GPT2Model, GPT2Config
 from tqdm import tqdm
 from sklearn.svm import LinearSVC
-from sklearn.linear_model import LogisticRegression, Lasso
+from sklearn.linear_model import LogisticRegression, Lasso, Ridge
 import warnings
 from sklearn import tree
 import xgboost as xgb
+import numpy as np
+from scipy.optimize import linprog
 
 from base_models import NeuralNetwork, ParallelNetworks
 
@@ -50,6 +52,10 @@ def get_relevant_baselines(task_name):
             (RidgeModel, {"alpha": 1.0}),
             (RidgeModel, {"alpha": 2.0}),
             (RidgeModel, {"alpha": 3.0}),
+            (LPSolverModel, {}),
+            (ADMMModel, {"rho": 0.1}),
+            (ADMMModel, {"rho": 1.0}),
+            (ADMMModel, {"rho": 10.0}),
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
         ],
@@ -495,6 +501,146 @@ class XGBoostModel:
             preds.append(pred)
 
         return torch.stack(preds, dim=1)
+class LPSolverModel:
+    """
+    L1 regression using Linear Programming solver.
+    Solves: min ||Xw - y||_1 using LP formulation
+    Converts to: min sum(u + v) s.t. Xw - y = u - v, u >= 0, v >= 0
+    """
+    def __init__(self):
+        self.name = "lp_solver_l1"
+
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
+
+        preds = []
+
+        for i in inds:
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:, 0]))
+                continue
+            
+            train_xs, train_ys = xs[:, :i], ys[:, :i]
+            test_x = xs[:, i : i + 1]
+            
+            pred = torch.zeros_like(ys[:, 0])
+            for j in range(ys.shape[0]):
+                X = train_xs[j].numpy()  # (i, ndim)
+                y = train_ys[j].numpy()  # (i,)
+                ndim = X.shape[1]
+                n_samples = X.shape[0]
+                
+                # LP formulation: min c'z where z = [w; u; v]
+                # c = [0, 0, ..., 0, 1, 1, ..., 1, 1, 1, ..., 1]
+                c = np.concatenate([np.zeros(ndim), np.ones(2 * n_samples)])
+                
+                # Equality constraint: [X, -I, I] * z = y
+                A_eq = np.hstack([X, -np.eye(n_samples), np.eye(n_samples)])
+                b_eq = y
+                
+                # Bounds: w unbounded, u >= 0, v >= 0
+                bounds = [(None, None)] * ndim + [(0, None)] * (2 * n_samples)
+                
+                try:
+                    res = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method='highs')
+                    w = res.x[:ndim]
+                    test_x_j = test_x[j].numpy()
+                    y_pred = test_x_j @ w
+                    pred[j] = torch.tensor(y_pred[0], dtype=pred.dtype)
+                except Exception as e:
+                    # Fallback to L2 if LP fails
+                    ws, _, _, _ = torch.linalg.lstsq(train_xs[j:j+1], train_ys[j:j+1].unsqueeze(2))
+                    y_pred = test_x[j:j+1] @ ws
+                    pred[j] = y_pred[0, 0, 0]
+            
+            preds.append(pred)
+
+        return torch.stack(preds, dim=1)
+
+
+class ADMMModel:
+    """
+    L1 regression using ADMM (Alternating Direction Method of Multipliers).
+    Solves: min ||Xw - y||_1
+    Using ADMM with augmented Lagrangian formulation.
+    """
+    def __init__(self, rho=1.0, max_iter=1000, tol=1e-4):
+        self.rho = rho
+        self.max_iter = max_iter
+        self.tol = tol
+        self.name = f"admm_l1_rho={rho}"
+
+    def __call__(self, xs, ys, inds=None):
+        xs, ys = xs.cpu(), ys.cpu()
+        if inds is None:
+            inds = range(ys.shape[1])
+        else:
+            if max(inds) >= ys.shape[1] or min(inds) < 0:
+                raise ValueError("inds contain indices where xs and ys are not defined")
+
+        preds = []
+
+        for i in inds:
+            if i == 0:
+                preds.append(torch.zeros_like(ys[:, 0]))
+                continue
+            
+            train_xs, train_ys = xs[:, :i], ys[:, :i]
+            test_x = xs[:, i : i + 1]
+            
+            pred = torch.zeros_like(ys[:, 0])
+            for j in range(ys.shape[0]):
+                X = train_xs[j].numpy()  # (i, ndim)
+                y = train_ys[j].numpy()  # (i,)
+                ndim = X.shape[1]
+                n_samples = X.shape[0]
+                
+                # ADMM variables
+                w = np.zeros(ndim)
+                z = np.zeros(n_samples)
+                u = np.zeros(n_samples)
+                
+                XtX = X.T @ X
+                Xty = X.T @ y
+                
+                for iteration in range(self.max_iter):
+                    # w update: (X'X + rho*I)w = X'y + rho*(z - u)
+                    w = np.linalg.solve(XtX + self.rho * np.eye(ndim), 
+                                       Xty + self.rho * (z - u))
+                    
+                    # z update: soft thresholding on (Xw + u)
+                    Xw = X @ w
+                    z_old = z.copy()
+                    z = self._soft_threshold(Xw + u - y, 1.0 / self.rho)
+                    
+                    # u update
+                    u = u + (Xw - y - z)
+                    
+                    # Check convergence
+                    r_norm = np.linalg.norm(Xw - y - z)
+                    s_norm = np.linalg.norm(-self.rho * (z - z_old))
+                    if r_norm < self.tol and s_norm < self.tol:
+                        break
+                
+                test_x_j = test_x[j].numpy()
+                y_pred = test_x_j @ w
+                pred[j] = torch.tensor(y_pred[0], dtype=pred.dtype)
+            
+            preds.append(pred)
+
+        return torch.stack(preds, dim=1)
+
+    @staticmethod
+    def _soft_threshold(x, threshold):
+        """Soft thresholding operator: sign(x) * max(|x| - threshold, 0)"""
+        return np.sign(x) * np.maximum(np.abs(x) - threshold, 0)
+
+
 class RidgeModel:
     def __init__(self, alpha=1.0):
         """
