@@ -25,7 +25,7 @@ training:
       interval: 2000
 
   # One of: gaussian, sparse_gaussian, ar1, vr1, ar2, vr2, nonstation
-  data: gamma
+  data: gaussian
 
   # Data kwargs:
   # - When data == 'sparse_gaussian': you may set 'k' (number of non-zero coords).
@@ -46,9 +46,9 @@ training:
   # - When task == 'sparse_linear_regression': you may set 'sparsity'.
   # - For other tasks: any 'sparsity' key will be ignored automatically.
   task_kwargs:
-    noise_std: 1.0
+    noise_std: 0.0
     noise_type: uniform
-    w_distribution: exponential
+    w_distribution: laplace
     w_kwargs:
       scale: 1.0
 
@@ -58,14 +58,14 @@ training:
   num_training_examples: null
   resume_id: null
   save_every_steps: 100
-  train_steps: 5001
+  train_steps: 100001
 
-out_dir: D:\Henry-Projects\ChestXray\how\in-context-learning\models\noisy_linear_regression
-# out_dir: ../models/noisy_linear_regression
+# out_dir: D:\Henry-Projects\ChestXray\how\in-context-learning\models\noisy_linear_regression
+out_dir: ../models/noisy_linear_regression
 
 wandb:
     project: "in-context-training"
-    name: "test"
+    name: "w_laplace"
     notes: "Training with laplace-distributed weights (non-uniform on hypersphere)"
     log_every_steps: 100
 

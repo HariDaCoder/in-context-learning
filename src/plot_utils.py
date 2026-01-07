@@ -46,6 +46,10 @@ relevant_model_names = {
         "Ridge (alpha=2.0)",
         "Ridge (alpha=3.0)",
         "3-Nearest Neighbors",
+        "LPSolverModel",
+        "ADMMModel (rho=0.1)",
+        "ADMMModel (rho=1.0)",
+        "ADMMModel (rho=10.0)",
         "Averaging"
     ],
     "uniform_hypersphere_regression": [

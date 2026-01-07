@@ -393,20 +393,21 @@ class NoisyLinearRegression(LinearRegression):
         Use robust loss for heavy-tailed noise (Cauchy, t-student) to handle outliers.
         For normal/uniform noise, use standard MSE.
         """
-        if self.noise_type in ["cauchy", "t-student"]:
-            # Use Huber loss for heavy-tailed distributions (robust to outliers)
-            # Huber loss is less sensitive to outliers than MSE
-            def robust_loss(ys_pred, ys):
-                return huber_loss(ys_pred, ys, delta=1.35)
-            return robust_loss
-        elif self.noise_type == "laplace":
-            # Laplace noise: use L1-like loss (MAE) which is more robust
-            def laplace_loss(ys_pred, ys):
-                return torch.abs(ys - ys_pred).mean()
-            return laplace_loss
-        else:
-            # For normal, uniform, and other noise types, use standard MSE
-            return mean_squared_error
+        # if self.noise_type in ["cauchy", "t-student"]:
+        #     # Use Huber loss for heavy-tailed distributions (robust to outliers)
+        #     # Huber loss is less sensitive to outliers than MSE
+        #     def robust_loss(ys_pred, ys):
+        #         return huber_loss(ys_pred, ys, delta=1.35)
+        #     return robust_loss
+        # elif self.noise_type == "laplace":
+        #     # Laplace noise: use L1-like loss (MAE) which is more robust
+        #     def laplace_loss(ys_pred, ys):
+        #         return torch.abs(ys - ys_pred).mean()
+        #     return laplace_loss
+        # else:
+        #     # For normal, uniform, and other noise types, use standard MSE
+        #     return mean_squared_error
+        return mean_absolute_error
 
 class QuadraticRegression(LinearRegression):
     def evaluate(self, xs_b):
