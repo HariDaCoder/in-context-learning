@@ -613,21 +613,37 @@ class ADMMModel:
                 Xty = X.T @ y
                 
                 for iteration in range(self.max_iter):
-                    # w update: (X'X + rho*I)w = X'y + rho*(z - u)
-                    w = np.linalg.solve(XtX + self.rho * np.eye(ndim), 
-                                       Xty + self.rho * (z - u))
+                    # w update: (X'X + rho*I)w = X'y + rho*X'(z - u)
+                    with np.errstate(over='ignore', invalid='ignore'):
+                        w = np.linalg.solve(XtX + self.rho * np.eye(ndim), 
+                                           Xty + self.rho * (X.T @ (z - u)))
+                    
+                    # Check for divergence early
+                    if np.any(np.isnan(w)) or np.any(np.isinf(w)) or np.max(np.abs(w)) > 1e10:
+                        break
                     
                     # z update: soft thresholding on (Xw + u)
-                    Xw = X @ w
-                    z_old = z.copy()
-                    z = self._soft_threshold(Xw + u - y, 1.0 / self.rho)
+                    with np.errstate(over='ignore', invalid='ignore'):
+                        Xw = X @ w
+                        z_old = z.copy()
+                        z = self._soft_threshold(Xw + u - y, 1.0 / self.rho)
+                    
+                    # Check for divergence
+                    if np.any(np.isnan(z)) or np.any(np.isinf(z)):
+                        break
                     
                     # u update
                     u = u + (Xw - y - z)
                     
-                    # Check convergence
+                    # Check convergence with overflow protection
                     r_norm = np.linalg.norm(Xw - y - z)
-                    s_norm = np.linalg.norm(-self.rho * (z - z_old))
+                    with np.errstate(over='ignore'):
+                        s_norm = np.linalg.norm(-self.rho * (z - z_old))
+                    
+                    # Stop if values become too large (numerical instability)
+                    if np.isnan(r_norm) or np.isnan(s_norm) or np.isinf(r_norm) or np.isinf(s_norm):
+                        break
+                    
                     if r_norm < self.tol and s_norm < self.tol:
                         break
                 
