@@ -40,7 +40,7 @@ training:
   #         relu_2nn_regression, decision_tree, noisy_linear_regression,
   #         ar1_linear_regression, ar2_linear_regression, non_stationary_linear_regression,
   #         uniform_hypersphere_regression
-  task: noisy_linear_regression
+  task: uniform_hypersphere_regression
 
   # Task kwargs:
   # - When task == 'sparse_linear_regression': you may set 'sparsity'.
@@ -48,7 +48,7 @@ training:
   task_kwargs:
     noise_std: 0.0
     noise_type: uniform
-    w_distribution: laplace
+    w_distribution: gaussian
     w_kwargs:
       scale: 1.0
 
@@ -60,12 +60,12 @@ training:
   save_every_steps: 100
   train_steps: 100001
 
-# out_dir: D:\Henry-Projects\ChestXray\how\in-context-learning\models\noisy_linear_regression
+# out_dir: D:\Henry-Projects\ChestXray\how\in-context-learning\models\uniform_hypersphere_regression
 out_dir: ../models/noisy_linear_regression
 
 wandb:
     project: "in-context-training"
-    name: "w_laplace"
-    notes: "Training with laplace-distributed weights (non-uniform on hypersphere)"
+    name: "w_uniform_hypersphere_gaussian_weights"
+    notes: "Training with gaussian-distributed weights (non-uniform on hypersphere)"
     log_every_steps: 100
 
