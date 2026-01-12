@@ -74,7 +74,8 @@ def basic_plot(metrics, models=None, trivial=1.0):
     fig, ax = plt.subplots(1, 1)
 
     if models is not None:
-        metrics = {k: metrics[k] for k in models}
+        # Only include models that actually exist in the metrics
+        metrics = {k: metrics[k] for k in models if k in metrics}
 
     color = 0
     ax.axhline(trivial, ls="--", color="gray")

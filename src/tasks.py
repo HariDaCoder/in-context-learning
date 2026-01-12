@@ -101,7 +101,9 @@ class UniformHypersphereRegression(Task):
 
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)
-        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0] 
+        # Scale by sqrt(n_dims) because weights are normalized to unit norm
+        # whereas LinearRegression uses un-normalized random weights with expected norm ~sqrt(n_dims)
+        ys_linear = self.scale * math.sqrt(self.n_dims) * (xs_b @ w_b)[:, :, 0] 
         # ys_b = ys_linear + torch.randn_like(ys_linear)
         return ys_linear
 
@@ -113,11 +115,11 @@ class UniformHypersphereRegression(Task):
 
     @staticmethod
     def get_metric():
-        return squared_error
+        return absolute_error
 
     @staticmethod
     def get_training_metric():
-        return mean_squared_error
+        return mean_absolute_error
     
 class LinearRegression(Task):
     def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, uniform=False):
@@ -387,26 +389,13 @@ class NoisyLinearRegression(LinearRegression):
         if self.renormalize_ys:
             ys_b_noisy = ys_b_noisy * math.sqrt(self.n_dims) / ys_b_noisy.std()
         return ys_b_noisy
+    
+    @staticmethod
+    def get_metric():
+        return absolute_error
 
-    def get_training_metric(self):
-        """
-        Use robust loss for heavy-tailed noise (Cauchy, t-student) to handle outliers.
-        For normal/uniform noise, use standard MSE.
-        """
-        # if self.noise_type in ["cauchy", "t-student"]:
-        #     # Use Huber loss for heavy-tailed distributions (robust to outliers)
-        #     # Huber loss is less sensitive to outliers than MSE
-        #     def robust_loss(ys_pred, ys):
-        #         return huber_loss(ys_pred, ys, delta=1.35)
-        #     return robust_loss
-        # elif self.noise_type == "laplace":
-        #     # Laplace noise: use L1-like loss (MAE) which is more robust
-        #     def laplace_loss(ys_pred, ys):
-        #         return torch.abs(ys - ys_pred).mean()
-        #     return laplace_loss
-        # else:
-        #     # For normal, uniform, and other noise types, use standard MSE
-        #     return mean_squared_error
+    @staticmethod
+    def get_training_metric():
         return mean_absolute_error
 
 class QuadraticRegression(LinearRegression):

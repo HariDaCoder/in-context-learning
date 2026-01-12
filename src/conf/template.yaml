@@ -40,27 +40,26 @@ training:
   #         relu_2nn_regression, decision_tree, noisy_linear_regression,
   #         ar1_linear_regression, ar2_linear_regression, non_stationary_linear_regression,
   #         uniform_hypersphere_regression
-  task: uniform_hypersphere_regression
-
-  # Task kwargs:
-  # - When task == 'sparse_linear_regression': you may set 'sparsity'.
-  # - For other tasks: any 'sparsity' key will be ignored automatically.
+  task: noisy_linear_regression
   task_kwargs:
-    scale: 1.0
+    noise_std: 1.0
+    noise_type: poisson
+    w_distribution: gaussian
+    w_kwargs:
+      scale: 1.0
   learning_rate: 0.0001
   keep_every_steps: 10000
   num_tasks: null
   num_training_examples: null
   resume_id: null
   save_every_steps: 100
-  train_steps: 1001
+  train_steps: 500001
 
-# out_dir: D:\Henry-Projects\ChestXray\how\in-context-learning\models\uniform_hypersphere_regression
 out_dir: ../models/noisy_linear_regression
 
 wandb:
     project: "in-context-training"
-    name: "w_uniform_hypersphere_gaussian_weights"
+    name: "poisson noise with absolute mean"
     notes: "Training with gaussian-distributed weights (non-uniform on hypersphere)"
     log_every_steps: 100
 
