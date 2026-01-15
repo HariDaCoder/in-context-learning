@@ -370,7 +370,7 @@ class NoisyLinearRegression(LinearRegression):
             noise = (X - lam) * scale_factor
         #10 
         elif self.noise_type == "bernoulli":
-            p = self.noise_std # probability parameter (0 to 1)
+            p = self.w_kwargs.get("p", 0.25)
             if not (0 <= p <= 0.5):
                 raise ValueError(f"For Bernoulli noise, p must be in [0, 0.5]")
             bernoulli_dist = torch.distributions.Bernoulli(probs=p)
