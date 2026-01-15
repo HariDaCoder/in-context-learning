@@ -371,12 +371,13 @@ class NoisyLinearRegression(LinearRegression):
         #10 
         elif self.noise_type == "bernoulli":
             p = self.noise_std # probability parameter (0 to 1)
-            if not (0 <= p <= 1):
-                raise ValueError(f"For Bernoulli noise, noise_std must be between 0 and 1, got {p}")
+            if not (0 <= p <= 0.5):
+                raise ValueError(f"For Bernoulli noise, p must be in [0, 0.5]")
             bernoulli_dist = torch.distributions.Bernoulli(probs=p)
-            X = bernoulli_dist.sample(shape).to(device)
-            # Center around 0: X is 0 or 1, so (X - 0.5) * 2 gives -1 or 1
-            noise = (X - p) / math.sqrt(p * (1 - p))
+            # X = bernoulli_dist.sample(shape).to(device)
+            # # Center around 0: X is 0 or 1, so (X - 0.5) * 2 gives -1 or 1
+            # noise = (X - p) / math.sqrt(p * (1 - p))
+            noise = bernoulli_dist.sample(shape).to(device)
         else:
             raise ValueError(f"Unsupported noise type: {self.noise_type}")
         return noise
