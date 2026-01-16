@@ -393,11 +393,11 @@ class NoisyLinearRegression(LinearRegression):
     
     @staticmethod
     def get_metric():
-        return absolute_error
+        return absolute_error # squared_error in case of MAE loss
 
     @staticmethod
     def get_training_metric():
-        return mean_absolute_error
+        return mean_absolute_error  # mean_squared_error in case of MAE loss
 
 class QuadraticRegression(LinearRegression):
     def evaluate(self, xs_b):

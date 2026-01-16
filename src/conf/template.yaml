@@ -43,7 +43,7 @@ training:
   task: noisy_linear_regression
   task_kwargs:
     noise_std: 1.0
-    noise_type: poisson
+    noise_type: laplace
     w_distribution: gaussian
     w_kwargs:
       scale: 1.0
@@ -53,13 +53,13 @@ training:
   num_training_examples: null
   resume_id: null
   save_every_steps: 100
-  train_steps: 500001
+  train_steps: 100001
 
 out_dir: ../models/noisy_linear_regression
 
 wandb:
     project: "in-context-training"
-    name: "poisson noise with absolute mean"
+    name: "laplace noise with absolute mean"
     notes: "Training with gaussian-distributed weights (non-uniform on hypersphere)"
     log_every_steps: 100
 
