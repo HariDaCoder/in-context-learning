@@ -551,7 +551,7 @@ class LPSolverModel:
                 bounds = [(None, None)] * ndim + [(0, None)] * (2 * n_samples)
                 
                 try:
-                    res = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method='highs')
+                    res = linprog(c, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method='highs', options={"time_limit": 0.1})
                     w = res.x[:ndim]
                     test_x_j = test_x[j].numpy()
                     y_pred = test_x_j @ w
@@ -573,7 +573,7 @@ class ADMMModel:
     Solves: min ||Xw - y||_1
     Using ADMM with augmented Lagrangian formulation.
     """
-    def __init__(self, rho=1.0, max_iter=1000, tol=1e-4):
+    def __init__(self, rho=1.0, max_iter=200, tol=1e-4):
         self.rho = rho
         self.max_iter = max_iter
         self.tol = tol
