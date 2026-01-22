@@ -378,6 +378,14 @@ class NoisyLinearRegression(LinearRegression):
             # # Center around 0: X is 0 or 1, so (X - 0.5) * 2 gives -1 or 1
             # noise = (X - p) / math.sqrt(p * (1 - p))
             noise = bernoulli_dist.sample(shape).to(device)
+        elif self.noise_type == "gamma":
+            alpha = self.w_kwargs.get("alpha", 2.0)
+            theta = self.w_kwargs.get("theta", 1.0)
+            gamma_dist = torch.distributions.Gamma(
+                concentration=alpha,
+                rate=1.0 / theta
+            )
+            noise = gamma_dist.sample(shape).to(device)
         else:
             raise ValueError(f"Unsupported noise type: {self.noise_type}")
         return noise
@@ -399,6 +407,25 @@ class NoisyLinearRegression(LinearRegression):
     def get_training_metric():
         return mean_absolute_error  # mean_squared_error in case of MAE loss
 
+class HeteroskedasticNoisyLinearRegression(NoisyLinearRegression):
+    def __init__(self, *args, alpha=1.0, **kwargs):
+        super(HeteroskedasticNoisyLinearRegression, self).__init__(*args, **kwargs)
+        self.alpha = alpha
+
+    def evaluate(self, xs_b):
+        ys_b = super(LinearRegression, self).evaluate(xs_b)
+
+        # ||x|| per sample
+        x_norm = torch.norm(xs_b, dim=-1, keepdim=True)  # shape (B, N, 1)
+        sigma = (x_norm ** self.alpha)
+
+        noise = self.sample_noise(ys_b.shape, device=ys_b.device)
+        ys_b_noisy = ys_b + sigma.squeeze(-1) * noise
+
+        if self.renormalize_ys:
+            ys_b_noisy = ys_b_noisy * math.sqrt(self.n_dims) / ys_b_noisy.std()
+        
+        return ys_b_noisy
 class QuadraticRegression(LinearRegression):
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)
