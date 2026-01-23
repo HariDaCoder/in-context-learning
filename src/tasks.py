@@ -338,8 +338,10 @@ class NoisyLinearRegression(LinearRegression):
             noise = cauchy_dist.sample(shape, device=device)   
         # 6.
         elif self.noise_type == "exponential":
-            exp_noise = torch.distributions.Exponential(rate=1.0 / self.noise_std)
-            noise = exp_noise.sample(shape, device=device) - self.noise_std
+            # epsilon ~ Exp(lambda), support [0, +inf)
+            rate = self.w_kwargs.get("rate", 1.0)  # lambda
+            exp_dist = torch.distributions.Exponential(rate=rate)
+            noise = exp_dist.sample(shape).to(device)
         # 7.
         elif self.noise_type == "rayleigh":
             lambda_param = self.noise_std / math.sqrt(2.0 - math.pi / 2.0)
