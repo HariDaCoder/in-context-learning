@@ -365,11 +365,12 @@ class NoisyLinearRegression(LinearRegression):
             noise = (X - mean) / std * self.noise_std
         # 9.
         elif self.noise_type == "poisson":
-            lam = 3.0
+            lam = 1.0
             poisson_noise = torch.distributions.Poisson(lam)
-            X = poisson_noise.sample(shape).to(device)
-            scale_factor = self.noise_std / math.sqrt(lam)
-            noise = (X - lam) * scale_factor
+            # X = poisson_noise.sample(shape).to(device)
+            # scale_factor = self.noise_std / math.sqrt(lam)
+            # noise = (X - lam) * scale_factor
+            noise = poisson_noise.sample(shape).to(device)
         #10 
         elif self.noise_type == "bernoulli":
             p = self.w_kwargs.get("p", 0.25)
