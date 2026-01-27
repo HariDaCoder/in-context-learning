@@ -115,11 +115,11 @@ class UniformHypersphereRegression(Task):
 
     @staticmethod
     def get_metric():
-        return absolute_error
+        return squared_error
 
     @staticmethod
     def get_training_metric():
-        return mean_absolute_error
+        return mean_squared_error
     
 class LinearRegression(Task):
     def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, uniform=False):
@@ -233,6 +233,7 @@ class NoisyLinearRegression(LinearRegression):
         noise_type="laplace",  # "normal", "uniform", "laplace", "t-student", "cauchy", "exponential", "rayleigh", "beta", "poisson"        
         w_distribution="beta",
         w_kwargs=None,
+        noise_kwargs=None,
         uniform=False,
     ):
         super(NoisyLinearRegression, self).__init__(
@@ -243,6 +244,7 @@ class NoisyLinearRegression(LinearRegression):
         self.noise_type = noise_type.lower()
         self.w_distribution = w_distribution.lower()
         self.w_kwargs = w_kwargs or {}
+        self.noise_kwargs = noise_kwargs or {}
         self.w_b = self._compose_weights(pool_dict, seeds)
 
     def _compose_weights(self, pool_dict, seeds):
@@ -307,87 +309,61 @@ class NoisyLinearRegression(LinearRegression):
             if not (0 <= p <= 1):
                 raise ValueError(f"For Bernoulli distribution, p must be between 0 and 1, got {p}")
             bernoulli_dist = torch.distributions.Bernoulli(probs=p)
-            X = bernoulli_dist.sample(shape).to(device)
-            # Center around 0: (0 or 1) -> (-p or 1-p), standardized by sqrt(p*(1-p))
-            return (X - p) / math.sqrt(p * (1 - p)) if p != 0 and p != 1 else X.to(device)
+            return bernoulli_dist.sample(shape).to(device)
+        elif self.w_distribution == "gamma":
+            concentration = self.w_kwargs.get("concentration", 2.0)
+            rate = self.w_kwargs.get("rate", 1.0)
+            gamma_dist = torch.distributions.Gamma(concentration=concentration, rate=rate)
+            return gamma_dist.sample(shape).to(device)
         else: 
             raise ValueError(f"Unsupported weight distribution: {self.w_distribution}")
     def sample_noise(self, shape, device='cpu'):
-        # 1.
+        """Sample noise without forced centering/normalization - natural distributions"""
         if self.noise_type == "normal":
             noise = torch.randn(shape, device=device) * self.noise_std
-        # 2.
         elif self.noise_type == "uniform":
             a = math.sqrt(3) * self.noise_std
             noise = torch.empty(shape, device=device).uniform_(-a, a)
-        # 3.
         elif self.noise_type == "laplace":
             scale_param = self.noise_std / math.sqrt(2.0)
             laplace_dist = torch.distributions.Laplace(loc=0, scale=scale_param)
-            noise = laplace_dist.sample(shape, device=device)
-        # 4.
+            noise = laplace_dist.sample(shape).to(device)
         elif self.noise_type == "t-student":
-            df = 3.0
-            scale_param = self.noise_std / math.sqrt(df / (df-2.0))
+            df = self.noise_kwargs.get("df", 2.0)
+            scale_param = self.noise_std / math.sqrt(df / (df-2.0)) if df > 2 else self.noise_std
             t_dist = torch.distributions.StudentT(df=df, loc=0, scale=scale_param)
-            noise = t_dist.sample(shape, device=device)
-        # 5.
+            noise = t_dist.sample(shape).to(device)
         elif self.noise_type == "cauchy":
-            scale_param = self.noise_std 
+            scale_param = self.noise_std
             cauchy_dist = torch.distributions.StudentT(df=1, loc=0, scale=scale_param)
-            noise = cauchy_dist.sample(shape, device=device)   
-        # 6.
+            noise = cauchy_dist.sample(shape).to(device)
         elif self.noise_type == "exponential":
-            # epsilon ~ Exp(lambda), support [0, +inf)
-            rate = self.w_kwargs.get("rate", 1.0)  # lambda
+            rate = self.noise_kwargs.get("rate", 1.0)
             exp_dist = torch.distributions.Exponential(rate=rate)
             noise = exp_dist.sample(shape).to(device)
-        # 7.
         elif self.noise_type == "rayleigh":
-            lambda_param = self.noise_std / math.sqrt(2.0 - math.pi / 2.0)
-            # R = sqrt(X^2 + Y^2) với X, Y ~ N(0, sigma^2), 
-            # where sigma = lambda_param.
-            sigma = lambda_param
-
-            X = torch.randn(shape, device=device) * sigma
-            Y = torch.randn(shape, device=device) * sigma
-            R = torch.sqrt(X**2 + Y**2)
-            mean = lambda_param * math.sqrt(math.pi / 2.0)
-            noise = R - mean
-        # 8.
+            scale_param = self.noise_kwargs.get("scale", 1.0)
+            rayleigh_dist = torch.distributions.Rayleigh(scale=scale_param)
+            noise = rayleigh_dist.sample(shape).to(device)
         elif self.noise_type == "beta":
-            alpha, beta = 2.0, 5.0
-            mean = alpha / (alpha + beta)
-            var = (alpha * beta) / (((alpha + beta) ** 2) * (alpha + beta + 1))
-            std = math.sqrt(var)
+            alpha = self.noise_kwargs.get("concentration1", 2.0)
+            beta = self.noise_kwargs.get("concentration0", 5.0)
             beta_dist = torch.distributions.Beta(concentration1=alpha, concentration0=beta)
-            X = beta_dist.sample(shape).to(device)
-            noise = (X - mean) / std * self.noise_std
-        # 9.
+            noise = beta_dist.sample(shape).to(device)
         elif self.noise_type == "poisson":
-            lam = 1.0
-            poisson_noise = torch.distributions.Poisson(lam)
-            # X = poisson_noise.sample(shape).to(device)
-            # scale_factor = self.noise_std / math.sqrt(lam)
-            # noise = (X - lam) * scale_factor
-            noise = poisson_noise.sample(shape).to(device)
-        #10 
+            lam = self.noise_kwargs.get("lambda", 1.0)
+            poisson_dist = torch.distributions.Poisson(lam)
+            noise = poisson_dist.sample(shape).to(device)
         elif self.noise_type == "bernoulli":
-            p = self.w_kwargs.get("p", 0.25)
+            p = self.noise_kwargs.get("p", 0.25)
             if not (0 <= p <= 0.5):
                 raise ValueError(f"For Bernoulli noise, p must be in [0, 0.5]")
             bernoulli_dist = torch.distributions.Bernoulli(probs=p)
-            # X = bernoulli_dist.sample(shape).to(device)
-            # # Center around 0: X is 0 or 1, so (X - 0.5) * 2 gives -1 or 1
-            # noise = (X - p) / math.sqrt(p * (1 - p))
             noise = bernoulli_dist.sample(shape).to(device)
         elif self.noise_type == "gamma":
-            alpha = self.w_kwargs.get("alpha", 2.0)
-            theta = self.w_kwargs.get("theta", 1.0)
-            gamma_dist = torch.distributions.Gamma(
-                concentration=alpha,
-                rate=1.0 / theta
-            )
+            concentration = self.noise_kwargs.get("concentration", 2.0)
+            rate = self.noise_kwargs.get("rate", 1.0)
+            gamma_dist = torch.distributions.Gamma(concentration=concentration, rate=rate)
             noise = gamma_dist.sample(shape).to(device)
         else:
             raise ValueError(f"Unsupported noise type: {self.noise_type}")

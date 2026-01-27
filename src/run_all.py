@@ -1,61 +1,42 @@
 """
-Script để chạy nhiều experiments với các cấu hình khác nhau.
-Mỗi experiment sẽ sửa đổi các tham số: data, task, task_kwargs, và wandb name/notes.
+Comprehensive experiment runner for in-context learning research.
+Organized by figures - systematically designed from scratch.
 """
 
 import os
 import copy
 import yaml
 import subprocess
+import argparse
 from pathlib import Path
 
-# Link path to file template and folder containing configs
 TEMPLATE_FILE = "conf/template.yaml"
 CONFIGS_DIR = "conf/experiments"
 TRAIN_SCRIPT = "train.py"
 
-# Create directory for config files
 os.makedirs(CONFIGS_DIR, exist_ok=True)
 
 
 def create_config(base_config, modifications, config_name):
-    """
-    Create a new config file based on the template and modifications.
-    
-    Args:
-        base_config: Dict containing the original config from the template
-        modifications: Dict containing the changes to apply
-        config_name: Name of the new config file
-    
-    Returns:
-        Path to the created config file
-    """
-    # Copy original config deeply to avoid mutating shared nested dicts
+    """Create config file with modifications"""
     new_config = copy.deepcopy(base_config)
     
-    # Apply modifications
     if 'data' in modifications:
         new_config['training']['data'] = modifications['data']
-    
     if 'data_kwargs' in modifications:
         new_config['training']['data_kwargs'] = modifications['data_kwargs']
-    
     if 'task' in modifications:
         new_config['training']['task'] = modifications['task']
-    
     if 'task_kwargs' in modifications:
         new_config['training']['task_kwargs'] = modifications['task_kwargs']
-    
     if 'out_dir' in modifications:
         new_config['out_dir'] = modifications['out_dir']
-    
     if 'wandb' in modifications:
         if 'name' in modifications['wandb']:
             new_config['wandb']['name'] = modifications['wandb']['name']
         if 'notes' in modifications['wandb']:
             new_config['wandb']['notes'] = modifications['wandb']['notes']
     
-    # Save new config
     config_path = os.path.join(CONFIGS_DIR, f"{config_name}.yaml")
     with open(config_path, 'w') as f:
         yaml.dump(new_config, f, default_flow_style=False, sort_keys=False)
@@ -64,110 +45,189 @@ def create_config(base_config, modifications, config_name):
 
 
 def run_experiment(config_path, experiment_name):
-    """
-    Chạy experiment với config đã cho.
-    Run experiment using the specified config file.
-    
-    Args:
-        config_path: Đường dẫn đến file config
-        experiment_name: Tên experiment (để logging)
-    """
-    print(f"\n{'='*60}")
-    print(f"Starting experiment: {experiment_name}")
+    """Execute a single experiment"""
+    print(f"\n{'='*70}")
+    print(f"Running: {experiment_name}")
     print(f"Config: {config_path}")
-    print(f"{'='*60}\n")
+    print(f"{'='*70}\n")
     
-    # Run train.py with config
     cmd = f"python {TRAIN_SCRIPT} --config {config_path}"
     
     try:
         subprocess.run(cmd, shell=True, check=True)
-        print(f"\n✓ Experiment '{experiment_name}' completed successfully!\n")
+        print(f"\n✓ SUCCESS: {experiment_name}\n")
     except subprocess.CalledProcessError as e:
-        print(f"\n✗ Experiment '{experiment_name}' failed with error: {e}\n")
+        print(f"\n✗ FAILED: {experiment_name} (Error: {e})\n")
 
 
 def main():
-    # Read template config
+    parser = argparse.ArgumentParser(description='Run experiments for specific figures')
+    parser.add_argument('--figure', type=str, default='all', 
+                       choices=['1', '2', '3', 'all'],
+                       help='Which figure experiments to run: 1, 2, 3, or all')
+    args = parser.parse_args()
+    
     with open(TEMPLATE_FILE, 'r') as f:
         base_config = yaml.safe_load(f)
 
     experiments = []
 
-    # NoisyLinearRegression: vary weight distribution parameters
-    exp_weights = [
-        {
-            'dist': 'exponential',
-            'param': 'rate',
-            'values': [0.5, 1.0, 2.0, 5.0],
-        },
-        {
-            'dist': 'laplace',
-            'param': 'scale',
-            'values': [0.5, 1.0, 2.0],
-        },
-    ]
-
-    for group in exp_weights:
-        for val in group['values']:
-            name = f"noisy_linear_w_{group['dist']}_{group['param']}{val}"
+    # ============================================================================
+    # FIGURE 1: Exponential Weights + Different Noise Types
+    # ============================================================================
+    if args.figure in ['1', 'all']:
+        print("📈 Building FIGURE 1 experiments...")
+        
+        for noise_type in ['normal', 'laplace', 'exponential']:
+            noise_kw = {'rate': 1.0} if noise_type == 'exponential' else {}
+            name = f"fig1_exp_w_noise_{noise_type}"
             experiments.append({
                 'name': name,
                 'modifications': {
                     'data': 'gaussian',
                     'task': 'noisy_linear_regression',
                     'task_kwargs': {
-                        'w_distribution': group['dist'],
-                        'w_kwargs': {group['param']: val},
+                        'w_distribution': 'exponential',
+                        'w_kwargs': {'rate': 1.0},
+                        'noise_type': noise_type,
+                        'noise_kwargs': noise_kw,
+                        'noise_std': 1.0,
                     },
                     'out_dir': f"../models/{name}",
                     'wandb': {
-                        'name': f"NoisyLinear w {group['dist']} {group['param']}={val}",
-                        'notes': f"Noisy linear regression with {group['dist']} weights, {group['param']}={val}",
+                        'name': f"Fig1: Exp w + {noise_type} noise",
+                        'notes': f"Figure 1: Exponential weights with {noise_type} noise",
                     },
                 },
             })
 
-    # UniformHypersphereRegression: scale sweep 1..6
-    for scale in range(1, 7):
-        name = f"uniform_hypersphere_scale{scale}"
-        experiments.append({
-            'name': name,
-            'modifications': {
-                'data': 'gaussian',
-                'task': 'uniform_hypersphere_regression',
-                'task_kwargs': {'scale': float(scale)},
-                'out_dir': f"../models/{name}",
-                'wandb': {
-                    'name': f"Uniform Hypersphere scale={scale}",
-                    'notes': f"Uniform hypersphere regression with scale={scale}",
+    # ============================================================================
+    # FIGURE 2: Gamma Data Sampler + VAR(1) Correlation
+    # ============================================================================
+    if args.figure in ['2', 'all']:
+        print("📊 Building FIGURE 2 experiments...")
+        
+        # Gamma data: concentration=2.0, rate=1.0
+        for noise_type in ['normal', 'laplace']:
+            name = f"fig2_gamma_data_noise_{noise_type}"
+            experiments.append({
+                'name': name,
+                'modifications': {
+                    'data': 'gamma',
+                    'data_kwargs': {'concentration': 2.0, 'rate': 1.0},
+                    'task': 'noisy_linear_regression',
+                    'task_kwargs': {
+                        'w_distribution': 'gaussian',
+                        'w_kwargs': {'scale': 1.0},
+                        'noise_type': noise_type,
+                        'noise_std': 1.0,
+                    },
+                    'out_dir': f"../models/{name}",
+                    'wandb': {
+                        'name': f"Fig2: Gamma data + {noise_type} noise",
+                        'notes': f"Figure 2: Gamma data (k=2, λ=1), {noise_type} noise",
+                    },
                 },
-            },
-        })
-    
-    # ============================================================
+            })
+        
+        # VAR(1) data with rho=0.4
+        for noise_type in ['normal', 'laplace']:
+            name = f"fig2_var1_rho04_noise_{noise_type}"
+            experiments.append({
+                'name': name,
+                'modifications': {
+                    'data': 'vr1',
+                    'data_kwargs': {'ar1_mat': None},
+                    'task': 'noisy_linear_regression',
+                    'task_kwargs': {
+                        'w_distribution': 'gaussian',
+                        'w_kwargs': {'scale': 1.0},
+                        'noise_type': noise_type,
+                        'noise_std': 1.0,
+                    },
+                    'out_dir': f"../models/{name}",
+                    'wandb': {
+                        'name': f"Fig2: VAR(1) ρ=0.4 + {noise_type}",
+                        'notes': f"Figure 2: VAR(1) with ρ=0.4, {noise_type} noise",
+                    },
+                },
+            })
+
+    # ============================================================================
+    # FIGURE 3: Comprehensive Noise Type Study
+    # ============================================================================
+    if args.figure in ['3', 'all']:
+        print("📉 Building FIGURE 3 experiments...")
+        
+        noise_configs = [
+            ('bernoulli', [0.1, 0.2, 0.3, 0.4], 'p'),
+            ('exponential', [0.5, 1.5, 2.0], 'rate'),
+            ('gamma', [(2.0, 2.0), (3.0, 1.0), (4.0, 1.0)], 'k'),
+            ('poisson', [0.5, 2.0, 3.0], 'lambda'),
+            ('t-student', [3.0], 'df'),
+        ]
+        
+        for noise_type, param_values, param_name in noise_configs:
+            for param_val in param_values:
+                if noise_type == 'bernoulli':
+                    noise_kw = {'p': param_val}
+                    val_str = f"p{param_val}"
+                elif noise_type == 'exponential':
+                    noise_kw = {'rate': param_val}
+                    val_str = f"rate{param_val}"
+                elif noise_type == 'gamma':
+                    noise_kw = {'concentration': param_val[0], 'rate': param_val[1]}
+                    val_str = f"k{param_val[0]}_lambda{param_val[1]}"
+                elif noise_type == 'poisson':
+                    noise_kw = {'lambda': param_val}
+                    val_str = f"lambda{param_val}"
+                elif noise_type == 't-student':
+                    noise_kw = {'df': param_val}
+                    val_str = f"df{param_val}"
+                
+                name = f"fig3_noise_{noise_type}_{val_str}"
+                experiments.append({
+                    'name': name,
+                    'modifications': {
+                        'data': 'gaussian',
+                        'task': 'noisy_linear_regression',
+                        'task_kwargs': {
+                            'w_distribution': 'gaussian',
+                            'w_kwargs': {'scale': 1.0},
+                            'noise_type': noise_type,
+                            'noise_kwargs': noise_kw,
+                            'noise_std': 1.0,
+                        },
+                        'out_dir': f"../models/{name}",
+                        'wandb': {
+                            'name': f"Fig3: {noise_type} {val_str}",
+                            'notes': f"Figure 3: {noise_type} noise with {param_name}={param_val}",
+                        },
+                    },
+                })
+
+    # ============================================================================
     # RUN ALL EXPERIMENTS
-    # ============================================================
-    print(f"\n{'#'*60}")
-    print(f"Total experiments to run: {len(experiments)}")
-    print(f"{'#'*60}\n")
+    # ============================================================================
+    print(f"\n{'#'*70}")
+    print(f"🚀 Running experiments for: FIGURE {args.figure.upper()}")
+    print(f"📊 TOTAL EXPERIMENTS: {len(experiments)}")
+    print(f"{'#'*70}\n")
     
     for i, exp in enumerate(experiments, 1):
-        print(f"\nExperiment {i}/{len(experiments)}")
+        print(f"[{i}/{len(experiments)}] ", end="")
         
-        # Create config file
         config_path = create_config(
             base_config,
             exp['modifications'],
             exp['name']
         )
         
-        # Run experiment
         run_experiment(config_path, exp['name'])
     
-    print(f"\n{'#'*60}")
-    print(f"All experiments completed!")
-    print(f"{'#'*60}\n")
+    print(f"\n{'#'*70}")
+    print(f"✅ ALL EXPERIMENTS COMPLETED!")
+    print(f"{'#'*70}\n")
 
 
 if __name__ == "__main__":
