@@ -152,8 +152,7 @@ def main():
     if args.figure in ['2', 'all']:
         print("📊 Building FIGURE 2 experiments...")
 
-        # Easy to tweak: add/remove tuples in gamma_settings or rho values below.
-        gamma_noise_types = ['normal', 'laplace', 'exponential']
+        # Gamma data experiments (no noise)
         gamma_settings = [
             ("k2_r2", {'concentration': 2.0, 'rate': 2.0}),
             ("k3_r05", {'concentration': 3.0, 'rate': 0.5}),
@@ -162,53 +161,53 @@ def main():
         ]
 
         for tag, g_kwargs in gamma_settings:
-            for noise_type in gamma_noise_types:
-                name = f"fig2_gamma_{tag}_noise_{noise_type}"
-                experiments.append({
-                    'name': name,
-                    'modifications': {
-                        'data': 'gamma',
-                        'data_kwargs': g_kwargs,
-                        'task': 'noisy_linear_regression',
-                        'task_kwargs': {
-                            'w_distribution': 'gaussian',
-                            'w_kwargs': {'scale': 1.0},
-                            'noise_type': noise_type,
-                            'noise_std': 1.0,
-                        },
-                        'out_dir': str(MODELS_DIR / name),
-                        'wandb': {
-                            'name': f"Fig2: Gamma {tag} + {noise_type}",
-                            'notes': f"Figure 2: Gamma {g_kwargs}, {noise_type} noise",
-                        },
+            name = f"fig2_gamma_{tag}"
+            experiments.append({
+                'name': name,
+                'modifications': {
+                    'data': 'gamma',
+                    'data_kwargs': g_kwargs,
+                    'task': 'noisy_linear_regression',
+                    'task_kwargs': {
+                        'w_distribution': 'gaussian',
+                        'w_kwargs': {'scale': 1.0},
+                        'noise_type': 'normal',
+                        'noise_kwargs': {},
+                        'noise_std': 0.0,
                     },
-                })
+                    'out_dir': str(MODELS_DIR / name),
+                    'wandb': {
+                        'name': f"Fig2: Gamma {tag}",
+                        'notes': f"Figure 2: Gamma data {g_kwargs}, no noise",
+                    },
+                },
+            })
 
-        var1_noise_types = ['normal', 'laplace']
+        # VAR(1) correlation experiments (no noise)
         var1_rhos = [0.2, 0.5, 0.8]
 
         for rho in var1_rhos:
-            for noise_type in var1_noise_types:
-                name = f"fig2_var1_rho{int(rho * 100):02d}_noise_{noise_type}"
-                experiments.append({
-                    'name': name,
-                    'modifications': {
-                        'data': 'vr1',
-                        'data_kwargs': {'ar1_mat': [[rho]]},
-                        'task': 'noisy_linear_regression',
-                        'task_kwargs': {
-                            'w_distribution': 'gaussian',
-                            'w_kwargs': {'scale': 1.0},
-                            'noise_type': noise_type,
-                            'noise_std': 1.0,
-                        },
-                        'out_dir': str(MODELS_DIR / name),
-                        'wandb': {
-                            'name': f"Fig2: VAR(1) ρ={rho} + {noise_type}",
-                            'notes': f"Figure 2: VAR(1) with ρ={rho}, {noise_type} noise",
-                        },
+            name = f"fig2_var1_rho{int(rho * 100):02d}"
+            experiments.append({
+                'name': name,
+                'modifications': {
+                    'data': 'vr1',
+                    'data_kwargs': {'ar1_mat': [[rho]]},
+                    'task': 'noisy_linear_regression',
+                    'task_kwargs': {
+                        'w_distribution': 'gaussian',
+                        'w_kwargs': {'scale': 1.0},
+                        'noise_type': 'normal',
+                        'noise_kwargs': {},
+                        'noise_std': 0.0,
                     },
-                })
+                    'out_dir': str(MODELS_DIR / name),
+                    'wandb': {
+                        'name': f"Fig2: VAR(1) ρ={rho}",
+                        'notes': f"Figure 2: VAR(1) with ρ={rho}, no noise",
+                    },
+                },
+            })
 
     # ============================================================================
     # FIGURE 3: Comprehensive Noise Type Study
