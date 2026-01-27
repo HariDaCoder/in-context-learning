@@ -9,12 +9,17 @@ import yaml
 import subprocess
 import argparse
 from pathlib import Path
+from typing import Optional
 
-TEMPLATE_FILE = "conf/template.yaml"
-CONFIGS_DIR = "conf/experiments"
-TRAIN_SCRIPT = "train.py"
+# Resolve project root regardless of where the script is invoked
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_TEMPLATE = PROJECT_ROOT / "conf" / "template.yaml"
+CONFIGS_DIR = PROJECT_ROOT / "conf" / "experiments"
+MODELS_DIR = PROJECT_ROOT / "models"
+TRAIN_SCRIPT = PROJECT_ROOT / "src" / "train.py"
 
-os.makedirs(CONFIGS_DIR, exist_ok=True)
+CONFIGS_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def create_config(base_config, modifications, config_name):
@@ -37,7 +42,7 @@ def create_config(base_config, modifications, config_name):
         if 'notes' in modifications['wandb']:
             new_config['wandb']['notes'] = modifications['wandb']['notes']
     
-    config_path = os.path.join(CONFIGS_DIR, f"{config_name}.yaml")
+    config_path = CONFIGS_DIR / f"{config_name}.yaml"
     with open(config_path, 'w') as f:
         yaml.dump(new_config, f, default_flow_style=False, sort_keys=False)
     
@@ -51,13 +56,49 @@ def run_experiment(config_path, experiment_name):
     print(f"Config: {config_path}")
     print(f"{'='*70}\n")
     
-    cmd = f"python {TRAIN_SCRIPT} --config {config_path}"
+    cmd = ["python", str(TRAIN_SCRIPT), "--config", str(config_path)]
     
     try:
-        subprocess.run(cmd, shell=True, check=True)
+        subprocess.run(cmd, check=True)
         print(f"\n✓ SUCCESS: {experiment_name}\n")
     except subprocess.CalledProcessError as e:
         print(f"\n✗ FAILED: {experiment_name} (Error: {e})\n")
+
+
+def resolve_template_path(template_arg: Optional[str]) -> Path:
+    """Resolve template path with fallbacks and helpful error."""
+    candidates = []
+    if template_arg:
+        candidates.append(Path(template_arg).expanduser())
+    candidates.extend([
+        DEFAULT_TEMPLATE,
+        PROJECT_ROOT / "src" / "conf" / "template.yaml",
+        PROJECT_ROOT / "conf" / "base.yaml",
+    ])
+
+    for p in candidates:
+        if p.exists():
+            return p.resolve()
+
+    msg = "Cannot find template.yaml. Checked: " + ", ".join(str(p) for p in candidates)
+    raise FileNotFoundError(msg)
+
+
+def normalize_inherit_paths(config: dict, template_path: Path) -> dict:
+    """Make 'inherit' entries absolute relative to the template location."""
+    if 'inherit' in config and isinstance(config['inherit'], list):
+        base_dir = template_path.parent
+        new_inherit = []
+        for item in config['inherit']:
+            if isinstance(item, str):
+                p = Path(item)
+                if not p.is_absolute():
+                    p = (base_dir / p).resolve()
+                new_inherit.append(str(p))
+            else:
+                new_inherit.append(item)
+        config['inherit'] = new_inherit
+    return config
 
 
 def main():
@@ -65,10 +106,14 @@ def main():
     parser.add_argument('--figure', type=str, default='all', 
                        choices=['1', '2', '3', 'all'],
                        help='Which figure experiments to run: 1, 2, 3, or all')
+    parser.add_argument('--template', type=str, default=None,
+                        help='Path to template.yaml (optional). If omitted, will try conf/template.yaml and fallbacks.')
     args = parser.parse_args()
     
-    with open(TEMPLATE_FILE, 'r') as f:
+    template_path = resolve_template_path(args.template)
+    with open(template_path, 'r') as f:
         base_config = yaml.safe_load(f)
+    base_config = normalize_inherit_paths(base_config, template_path)
 
     experiments = []
 
@@ -93,7 +138,7 @@ def main():
                         'noise_kwargs': noise_kw,
                         'noise_std': 1.0,
                     },
-                    'out_dir': f"../models/{name}",
+                    'out_dir': str(MODELS_DIR / name),
                     'wandb': {
                         'name': f"Fig1: Exp w + {noise_type} noise",
                         'notes': f"Figure 1: Exponential weights with {noise_type} noise",
@@ -106,52 +151,64 @@ def main():
     # ============================================================================
     if args.figure in ['2', 'all']:
         print("📊 Building FIGURE 2 experiments...")
-        
-        # Gamma data: concentration=2.0, rate=1.0
-        for noise_type in ['normal', 'laplace']:
-            name = f"fig2_gamma_data_noise_{noise_type}"
-            experiments.append({
-                'name': name,
-                'modifications': {
-                    'data': 'gamma',
-                    'data_kwargs': {'concentration': 2.0, 'rate': 1.0},
-                    'task': 'noisy_linear_regression',
-                    'task_kwargs': {
-                        'w_distribution': 'gaussian',
-                        'w_kwargs': {'scale': 1.0},
-                        'noise_type': noise_type,
-                        'noise_std': 1.0,
+
+        # Easy to tweak: add/remove tuples in gamma_settings or rho values below.
+        gamma_noise_types = ['normal', 'laplace', 'exponential']
+        gamma_settings = [
+            ("k2_r2", {'concentration': 2.0, 'rate': 2.0}),
+            ("k3_r05", {'concentration': 3.0, 'rate': 0.5}),
+            ("k4_r2", {'concentration': 4.0, 'rate': 2.0}),
+            ("k5_r1", {'concentration': 3.0, 'rate': 1.0}),
+        ]
+
+        for tag, g_kwargs in gamma_settings:
+            for noise_type in gamma_noise_types:
+                name = f"fig2_gamma_{tag}_noise_{noise_type}"
+                experiments.append({
+                    'name': name,
+                    'modifications': {
+                        'data': 'gamma',
+                        'data_kwargs': g_kwargs,
+                        'task': 'noisy_linear_regression',
+                        'task_kwargs': {
+                            'w_distribution': 'gaussian',
+                            'w_kwargs': {'scale': 1.0},
+                            'noise_type': noise_type,
+                            'noise_std': 1.0,
+                        },
+                        'out_dir': str(MODELS_DIR / name),
+                        'wandb': {
+                            'name': f"Fig2: Gamma {tag} + {noise_type}",
+                            'notes': f"Figure 2: Gamma {g_kwargs}, {noise_type} noise",
+                        },
                     },
-                    'out_dir': f"../models/{name}",
-                    'wandb': {
-                        'name': f"Fig2: Gamma data + {noise_type} noise",
-                        'notes': f"Figure 2: Gamma data (k=2, λ=1), {noise_type} noise",
+                })
+
+        var1_noise_types = ['normal', 'laplace']
+        var1_rhos = [0.2, 0.5, 0.8]
+
+        for rho in var1_rhos:
+            for noise_type in var1_noise_types:
+                name = f"fig2_var1_rho{int(rho * 100):02d}_noise_{noise_type}"
+                experiments.append({
+                    'name': name,
+                    'modifications': {
+                        'data': 'vr1',
+                        'data_kwargs': {'ar1_mat': [[rho]]},
+                        'task': 'noisy_linear_regression',
+                        'task_kwargs': {
+                            'w_distribution': 'gaussian',
+                            'w_kwargs': {'scale': 1.0},
+                            'noise_type': noise_type,
+                            'noise_std': 1.0,
+                        },
+                        'out_dir': str(MODELS_DIR / name),
+                        'wandb': {
+                            'name': f"Fig2: VAR(1) ρ={rho} + {noise_type}",
+                            'notes': f"Figure 2: VAR(1) with ρ={rho}, {noise_type} noise",
+                        },
                     },
-                },
-            })
-        
-        # VAR(1) data with rho=0.4
-        for noise_type in ['normal', 'laplace']:
-            name = f"fig2_var1_rho04_noise_{noise_type}"
-            experiments.append({
-                'name': name,
-                'modifications': {
-                    'data': 'vr1',
-                    'data_kwargs': {'ar1_mat': None},
-                    'task': 'noisy_linear_regression',
-                    'task_kwargs': {
-                        'w_distribution': 'gaussian',
-                        'w_kwargs': {'scale': 1.0},
-                        'noise_type': noise_type,
-                        'noise_std': 1.0,
-                    },
-                    'out_dir': f"../models/{name}",
-                    'wandb': {
-                        'name': f"Fig2: VAR(1) ρ=0.4 + {noise_type}",
-                        'notes': f"Figure 2: VAR(1) with ρ=0.4, {noise_type} noise",
-                    },
-                },
-            })
+                })
 
     # ============================================================================
     # FIGURE 3: Comprehensive Noise Type Study
@@ -198,7 +255,7 @@ def main():
                             'noise_kwargs': noise_kw,
                             'noise_std': 1.0,
                         },
-                        'out_dir': f"../models/{name}",
+                        'out_dir': str(MODELS_DIR / name),
                         'wandb': {
                             'name': f"Fig3: {noise_type} {val_str}",
                             'notes': f"Figure 3: {noise_type} noise with {param_name}={param_val}",
