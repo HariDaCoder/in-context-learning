@@ -118,14 +118,14 @@ def main():
     experiments = []
 
     # ============================================================================
-    # FIGURE 1: Exponential Weights + Different Noise Types
+    # FIGURE 1: Weight Distribution Parameters + Uniform Hypersphere Scale
     # ============================================================================
     if args.figure in ['1', 'all']:
         print("📈 Building FIGURE 1 experiments...")
         
-        for noise_type in ['normal', 'laplace', 'exponential']:
-            noise_kw = {'rate': 1.0} if noise_type == 'exponential' else {}
-            name = f"fig1_exp_w_noise_{noise_type}"
+        # Exponential weight distribution with varying rates
+        for rate in [0.5, 1.5, 2.0, 3.0]:
+            name = f"fig1_exp_w_rate{rate}"
             experiments.append({
                 'name': name,
                 'modifications': {
@@ -133,15 +133,55 @@ def main():
                     'task': 'noisy_linear_regression',
                     'task_kwargs': {
                         'w_distribution': 'exponential',
-                        'w_kwargs': {'rate': 1.0},
-                        'noise_type': noise_type,
-                        'noise_kwargs': noise_kw,
-                        'noise_std': 1.0,
+                        'w_kwargs': {'rate': rate},
+                        'noise_type': 'normal',
+                        'noise_kwargs': {},
+                        'noise_std': 0.0,
                     },
                     'out_dir': str(MODELS_DIR / name),
                     'wandb': {
-                        'name': f"Fig1: Exp w + {noise_type} noise",
-                        'notes': f"Figure 1: Exponential weights with {noise_type} noise",
+                        'name': f"Fig1: Exponential w rate={rate}",
+                        'notes': f"Figure 1: Exponential weight distribution, rate={rate}",
+                    },
+                },
+            })
+        
+        # Laplace weight distribution with varying scales
+        for scale in [0.5, 1.5, 2.0, 3.0]:
+            name = f"fig1_laplace_w_scale{scale}"
+            experiments.append({
+                'name': name,
+                'modifications': {
+                    'data': 'gaussian',
+                    'task': 'noisy_linear_regression',
+                    'task_kwargs': {
+                        'w_distribution': 'laplace',
+                        'w_kwargs': {'scale': scale},
+                        'noise_type': 'normal',
+                        'noise_kwargs': {},
+                        'noise_std': 0.0,
+                    },
+                    'out_dir': str(MODELS_DIR / name),
+                    'wandb': {
+                        'name': f"Fig1: Laplace w scale={scale}",
+                        'notes': f"Figure 1: Laplace weight distribution, scale={scale}",
+                    },
+                },
+            })
+        
+        # Uniform hypersphere regression with varying scales
+        for scale in range(1, 7):
+            name = f"fig1_uniform_hypersphere_scale{scale}"
+            experiments.append({
+                'name': name,
+                'modifications': {
+                    'data': 'gaussian',
+                    'task': 'uniform_hypersphere_regression',
+                    'task_kwargs': {'scale': float(scale)},
+                    'out_dir': str(MODELS_DIR / name),
+                    'wandb': {
+                        'name': f"Fig1: Uniform Hypersphere scale={scale}",
+                        'notes': f"Figure 1: Uniform hypersphere regression, scale={scale}",
                     },
                 },
             })
