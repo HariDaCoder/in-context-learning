@@ -218,7 +218,7 @@ def build_evals(conf):
         "linear_classification": {"scale", "uniform"},
         "relu_2nn_regression": {"scale", "hidden_layer_size"},
         "decision_tree": {"depth"},
-        "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform", "w_distribution", "w_kwargs"},
+        "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform", "w_distribution", "w_kwargs", "noise_kwargs", "loss_type"},
         "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
         "uniform_hypersphere_regression": {"scale"},
         "linear_regression": {"scale", "uniform"},

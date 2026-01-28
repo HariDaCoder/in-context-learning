@@ -235,6 +235,7 @@ class NoisyLinearRegression(LinearRegression):
         w_kwargs=None,
         noise_kwargs=None,
         uniform=False,
+        loss_type="l1",  # "l1" for MAE, "l2" for MSE
     ):
         super(NoisyLinearRegression, self).__init__(
             n_dims, batch_size, pool_dict, seeds, scale, uniform
@@ -245,6 +246,7 @@ class NoisyLinearRegression(LinearRegression):
         self.w_distribution = w_distribution.lower()
         self.w_kwargs = w_kwargs or {}
         self.noise_kwargs = noise_kwargs or {}
+        self.loss_type = loss_type.lower()
         self.w_b = self._compose_weights(pool_dict, seeds)
 
     def _compose_weights(self, pool_dict, seeds):
@@ -378,13 +380,19 @@ class NoisyLinearRegression(LinearRegression):
             ys_b_noisy = ys_b_noisy * math.sqrt(self.n_dims) / ys_b_noisy.std()
         return ys_b_noisy
     
-    @staticmethod
-    def get_metric():
-        return absolute_error # squared_error in case of MAE loss
+    def get_metric(self):
+        """Return metric based on loss_type: L1 (MAE) or L2 (MSE)"""
+        if self.loss_type == "l2":
+            return squared_error
+        else:  # default l1
+            return absolute_error
 
-    @staticmethod
-    def get_training_metric():
-        return mean_absolute_error  # mean_squared_error in case of MAE loss
+    def get_training_metric(self):
+        """Return training metric based on loss_type: L1 (MAE) or L2 (MSE)"""
+        if self.loss_type == "l2":
+            return mean_squared_error
+        else:  # default l1
+            return mean_absolute_error
 
 class HeteroskedasticNoisyLinearRegression(NoisyLinearRegression):
     def __init__(self, *args, alpha=1.0, **kwargs):

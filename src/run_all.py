@@ -137,6 +137,7 @@ def main():
                         'noise_type': 'normal',
                         'noise_kwargs': {},
                         'noise_std': 0.0,
+                        'loss_type': 'l2',
                     },
                     'out_dir': str(MODELS_DIR / name),
                     'wandb': {
@@ -160,6 +161,7 @@ def main():
                         'noise_type': 'normal',
                         'noise_kwargs': {},
                         'noise_std': 0.0,
+                        'loss_type': 'l2',
                     },
                     'out_dir': str(MODELS_DIR / name),
                     'wandb': {
@@ -214,6 +216,7 @@ def main():
                         'noise_type': 'normal',
                         'noise_kwargs': {},
                         'noise_std': 0.0,
+                        'loss_type': 'l2',
                     },
                     'out_dir': str(MODELS_DIR / name),
                     'wandb': {
@@ -240,6 +243,7 @@ def main():
                         'noise_type': 'normal',
                         'noise_kwargs': {},
                         'noise_std': 0.0,
+                        'loss_type': 'l2',
                     },
                     'out_dir': str(MODELS_DIR / name),
                     'wandb': {
@@ -256,10 +260,9 @@ def main():
         print("📉 Building FIGURE 3 experiments...")
         
         noise_configs = [
-            ('bernoulli', [0.1, 0.2, 0.3, 0.4], 'p'),
-            ('exponential', [0.5, 1.5, 2.0], 'rate'),
-            ('gamma', [(2.0, 2.0), (3.0, 1.0), (4.0, 1.0)], 'k'),
-            ('poisson', [0.5, 2.0, 3.0], 'lambda'),
+            ('bernoulli', [0.3], 'p'),
+            ('gamma', [(4.0, 1.0)], 'k'),
+            ('poisson', [2.0, 3.0], 'lambda'),
             ('t-student', [3.0], 'df'),
         ]
         
