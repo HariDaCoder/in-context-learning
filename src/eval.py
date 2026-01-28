@@ -168,17 +168,22 @@ def eval_model(
        - num_eval_examples: total number of examples to evaluate on
        - **sampler_kwargs: remaining arguments to pass directly to the sampler
     """
+    print(f"[DEBUG] eval_model: task={task_name}, data={data_name}, strategy={prompting_strategy}")
 
     assert num_eval_examples % batch_size == 0
+    print(f"[DEBUG] Creating data sampler with kwargs: {data_sampler_kwargs}")
     data_sampler = get_data_sampler(data_name, n_dims, **data_sampler_kwargs)
+    print(f"[DEBUG] Creating task sampler with kwargs: {task_sampler_kwargs}")
     task_sampler = get_task_sampler(
         task_name, n_dims, batch_size, **task_sampler_kwargs
     )
+    print(f"[DEBUG] Samplers created, starting eval batches...")
 
     all_metrics = []
 
     generating_func = globals()[f"gen_{prompting_strategy}"]
     for i in range(num_eval_examples // batch_size):
+        print(f"[DEBUG]   Batch {i+1}/{num_eval_examples // batch_size}")
         xs, xs_p = generating_func(data_sampler, n_points, batch_size)
 
         metrics = eval_batch(model, task_sampler, xs, xs_p)
@@ -366,17 +371,23 @@ def compute_evals(all_models, evaluation_kwargs, save_path=None, recompute=False
         all_metrics = {}
 
     for eval_name, kwargs in tqdm(evaluation_kwargs.items()):
+        print(f"[DEBUG] Evaluating: {eval_name}")
         metrics = {}
         if eval_name in all_metrics and not recompute:
+            print(f"[DEBUG]   Cached, skipping")
             metrics = all_metrics[eval_name]
         for model in all_models:
             if model.name in metrics and not recompute:
+                print(f"[DEBUG]   Model {model.name} cached, skipping")
                 continue
 
+            print(f"[DEBUG]   Evaluating model: {model.name}")
             metrics[model.name] = eval_model(model, **kwargs)
+            print(f"[DEBUG]   Model {model.name} done")
         all_metrics[eval_name] = metrics
 
     if save_path is not None:
+        print(f"[DEBUG] Saving metrics to {save_path}")
         with open(save_path, "w") as fp:
             json.dump(all_metrics, fp, indent=2)
 
@@ -386,16 +397,27 @@ def compute_evals(all_models, evaluation_kwargs, save_path=None, recompute=False
 def get_run_metrics(
     run_path, step=-1, cache=True, skip_model_load=False, skip_baselines=False
 ):
+    print(f"[DEBUG] get_run_metrics: run_path={run_path}, step={step}, skip_baselines={skip_baselines}")
+    
     if skip_model_load:
+        print(f"[DEBUG] Loading config only...")
         _, conf = get_model_from_run(run_path, only_conf=True)
         all_models = []
     else:
+        print(f"[DEBUG] Loading model and config...")
         model, conf = get_model_from_run(run_path, step)
+        print(f"[DEBUG] Model loaded, moving to CUDA...")
         model = model.cuda().eval()
+        print(f"[DEBUG] Model on CUDA, preparing baseline models...")
         all_models = [model]
         if not skip_baselines:
+            print(f"[DEBUG] Getting relevant baselines for task: {conf.training.task}")
             all_models += models.get_relevant_baselines(conf.training.task)
+            print(f"[DEBUG] Total models: {len(all_models)}")
+    
+    print(f"[DEBUG] Building evaluation kwargs...")
     evaluation_kwargs = build_evals(conf)
+    print(f"[DEBUG] Evaluation kwargs built, total evals: {len(evaluation_kwargs)}")
 
     if not cache:
         save_path = None
@@ -411,7 +433,9 @@ def get_run_metrics(
         if checkpoint_created > cache_created:
             recompute = True
 
+    print(f"[DEBUG] Starting compute_evals...")
     all_metrics = compute_evals(all_models, evaluation_kwargs, save_path, recompute)
+    print(f"[DEBUG] compute_evals completed")
     return all_metrics
 
 

@@ -573,7 +573,7 @@ class ADMMModel:
     Solves: min ||Xw - y||_1
     Using ADMM with augmented Lagrangian formulation.
     """
-    def __init__(self, rho=1.0, max_iter=200, tol=1e-4):
+    def __init__(self, rho=1.0, max_iter=10, tol=1e-1):
         self.rho = rho
         self.max_iter = max_iter
         self.tol = tol
@@ -614,19 +614,19 @@ class ADMMModel:
                 
                 for iteration in range(self.max_iter):
                     # w update: (X'X + rho*I)w = X'y + rho*X'(z - u)
-                    with np.errstate(over='ignore', invalid='ignore'):
-                        w = np.linalg.solve(XtX + self.rho * np.eye(ndim), 
-                                           Xty + self.rho * (X.T @ (z - u)))
+                    # Use lstsq instead of solve to avoid singular matrix issues
+                    A = XtX + self.rho * np.eye(ndim)
+                    b = Xty + self.rho * (X.T @ (z - u))
+                    w, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
                     
                     # Check for divergence early
-                    if np.any(np.isnan(w)) or np.any(np.isinf(w)) or np.max(np.abs(w)) > 1e10:
+                    if np.any(np.isnan(w)) or np.any(np.isinf(w)) or np.max(np.abs(w)) > 1e6:
                         break
                     
                     # z update: soft thresholding on (Xw + u)
-                    with np.errstate(over='ignore', invalid='ignore'):
-                        Xw = X @ w
-                        z_old = z.copy()
-                        z = self._soft_threshold(Xw + u - y, 1.0 / self.rho)
+                    Xw = X @ w
+                    z_old = z.copy()
+                    z = self._soft_threshold(Xw + u - y, 1.0 / self.rho)
                     
                     # Check for divergence
                     if np.any(np.isnan(z)) or np.any(np.isinf(z)):
@@ -635,10 +635,9 @@ class ADMMModel:
                     # u update
                     u = u + (Xw - y - z)
                     
-                    # Check convergence with overflow protection
+                    # Check convergence
                     r_norm = np.linalg.norm(Xw - y - z)
-                    with np.errstate(over='ignore'):
-                        s_norm = np.linalg.norm(-self.rho * (z - z_old))
+                    s_norm = np.linalg.norm(-self.rho * (z - z_old))
                     
                     # Stop if values become too large (numerical instability)
                     if np.isnan(r_norm) or np.isnan(s_norm) or np.isinf(r_norm) or np.isinf(s_norm):
