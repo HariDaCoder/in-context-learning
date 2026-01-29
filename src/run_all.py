@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 # Resolve project root regardless of where the script is invoked
-PROJECT_ROOT = Path(_file_).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_TEMPLATE = PROJECT_ROOT / "conf" / "template.yaml"
 CONFIGS_DIR = PROJECT_ROOT / "conf" / "experiments"
 MODELS_DIR = PROJECT_ROOT / "models"
