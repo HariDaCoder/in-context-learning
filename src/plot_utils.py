@@ -40,32 +40,16 @@ relevant_model_names = {
     "noisy_linear_regression": [
         "Transformer",
         "Least Squares",
-        "Ridge (alpha=0.1)",
-        "Ridge (alpha=0.5)",
         "Ridge (alpha=1.0)",
-        "Ridge (alpha=2.0)",
-        "Ridge (alpha=3.0)",
-        "3-Nearest Neighbors",
         "LPSolverModel",
-        "ADMMModel (rho=0.1)",
         "ADMMModel (rho=1.0)",
-        "ADMMModel (rho=10.0)",
-        "Averaging"
     ],
     "uniform_hypersphere_regression": [
         "Transformer",
         "Least Squares",
-        "Ridge (alpha=0.1)",
-        "Ridge (alpha=0.5)",
         "Ridge (alpha=1.0)",
-        "Ridge (alpha=2.0)",
-        "Ridge (alpha=3.0)",
         "LPSolverModel",
-        "ADMMModel (rho=0.1)",
         "ADMMModel (rho=1.0)",
-        "ADMMModel (rho=10.0)",
-        "3-Nearest Neighbors",
-        "Averaging",
     ],
 }
 

@@ -468,6 +468,13 @@ def baseline_names(name):
         return "Greedy Tree Learning"
     if "xgboost" in name:
         return "XGBoost"
+    if "ridge" in name:
+        alpha = name.split("_")[1].split("=")[1]
+        return f"Ridge (alpha={alpha})"
+    if "solve" in name:
+        return "LPSolverModel"
+    if "adm" in name:
+        return "ADMMModel (rho=1.0)"
     return name
 
 
