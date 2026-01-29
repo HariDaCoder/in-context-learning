@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 # Resolve project root regardless of where the script is invoked
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(_file_).resolve().parent.parent
 DEFAULT_TEMPLATE = PROJECT_ROOT / "conf" / "template.yaml"
 CONFIGS_DIR = PROJECT_ROOT / "conf" / "experiments"
 MODELS_DIR = PROJECT_ROOT / "models"
@@ -108,6 +108,8 @@ def main():
                        help='Which figure experiments to run: 1, 2, 3, or all')
     parser.add_argument('--template', type=str, default=None,
                         help='Path to template.yaml (optional). If omitted, will try conf/template.yaml and fallbacks.')
+    parser.add_argument('--exp-id', type=int, default=None,
+                        help='Run specific experiment by index (0-based). If omitted, runs all.')
     args = parser.parse_args()
     
     template_path = resolve_template_path(args.template)
@@ -260,8 +262,8 @@ def main():
         print("📉 Building FIGURE 3 experiments...")
         
         noise_configs = [
-            ('bernoulli', [0.3], 'p'),
-            ('gamma', [(4.0, 1.0)], 'k'),
+            ('bernoulli', [0.1, 0.2, 0.3, 0.4], 'p'),
+            ('gamma', [(4.0, 1.0), ()], 'k'),
             ('poisson', [2.0, 3.0], 'lambda'),
             ('t-student', [3.0], 'df'),
         ]
@@ -313,6 +315,14 @@ def main():
     print(f"📊 TOTAL EXPERIMENTS: {len(experiments)}")
     print(f"{'#'*70}\n")
     
+    # Filter to specific experiment if --exp-id provided
+    if args.exp_id is not None:
+        if args.exp_id < 0 or args.exp_id >= len(experiments):
+            print(f"❌ Invalid --exp-id {args.exp_id}. Valid range: 0-{len(experiments)-1}")
+            return
+        experiments = [experiments[args.exp_id]]
+        print(f"🎯 Running single experiment: {experiments[0]['name']}\n")
+    
     for i, exp in enumerate(experiments, 1):
         print(f"[{i}/{len(experiments)}] ", end="")
         
@@ -328,6 +338,3 @@ def main():
     print(f"✅ ALL EXPERIMENTS COMPLETED!")
     print(f"{'#'*70}\n")
 
-
-if __name__ == "__main__":
-    main()
