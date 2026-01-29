@@ -13,7 +13,7 @@ from typing import Optional
 
 # Resolve project root regardless of where the script is invoked
 try:
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+    PROJECT_ROOT = Path(_file_).resolve().parent.parent
 except NameError:
     # Running in Jupyter/Colab where _file_ doesn't exist
     PROJECT_ROOT = Path(os.getcwd())
@@ -353,5 +353,5 @@ def main():
     print(f"{'#'*70}\n")
 
 
-if __name__ == "_main_":
+if _name_ == "_main_":
     main()
