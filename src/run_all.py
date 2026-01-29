@@ -56,7 +56,7 @@ def run_experiment(config_path, experiment_name):
     print(f"Config: {config_path}")
     print(f"{'='*70}\n")
     
-    cmd = ["python", str(TRAIN_SCRIPT), "--config", str(config_path)]
+    cmd = ["python3.9", str(TRAIN_SCRIPT), "--config", str(config_path)]
     
     try:
         subprocess.run(cmd, check=True)

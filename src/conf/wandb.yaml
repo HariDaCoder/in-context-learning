@@ -1,5 +1,5 @@
 wandb:
     project: in-context-training
-    entity: haitrinh220970-hcmut
+    entity: hai-trinh220970-ho-chi-minh-city-university-of-technology
     notes:
     log_every_steps: 100
