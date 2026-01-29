@@ -12,7 +12,14 @@ from pathlib import Path
 from typing import Optional
 
 # Resolve project root regardless of where the script is invoked
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+try:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+except NameError:
+    # Running in Jupyter/Colab where _file_ doesn't exist
+    PROJECT_ROOT = Path(os.getcwd())
+    if PROJECT_ROOT.name == "src":
+        PROJECT_ROOT = PROJECT_ROOT.parent
+
 DEFAULT_TEMPLATE = PROJECT_ROOT / "conf" / "template.yaml"
 CONFIGS_DIR = PROJECT_ROOT / "conf" / "experiments"
 MODELS_DIR = PROJECT_ROOT / "models"
@@ -59,10 +66,17 @@ def run_experiment(config_path, experiment_name):
     cmd = ["python3.9", str(TRAIN_SCRIPT), "--config", str(config_path)]
     
     try:
-        subprocess.run(cmd, check=True)
+        # Show output in real-time by not capturing stdout/stderr
+        result = subprocess.run(cmd, check=True, text=True)
         print(f"\n✓ SUCCESS: {experiment_name}\n")
+        return True
     except subprocess.CalledProcessError as e:
-        print(f"\n✗ FAILED: {experiment_name} (Error: {e})\n")
+        print(f"\n✗ FAILED: {experiment_name}")
+        print(f"Exit code: {e.returncode}\n")
+        return False
+    except KeyboardInterrupt:
+        print(f"\n⚠️  INTERRUPTED: {experiment_name}\n")
+        raise
 
 
 def resolve_template_path(template_arg: Optional[str]) -> Path:
