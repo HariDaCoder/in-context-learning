@@ -13,9 +13,9 @@ from typing import Optional
 
 # Resolve project root regardless of where the script is invoked
 try:
-    PROJECT_ROOT = Path(_file_).resolve().parent.parent
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
 except NameError:
-    # Running in Jupyter/Colab where _file_ doesn't exist
+    # Running in Jupyter/Colab where __file__ doesn't exist
     PROJECT_ROOT = Path(os.getcwd())
     if PROJECT_ROOT.name == "src":
         PROJECT_ROOT = PROJECT_ROOT.parent
@@ -353,5 +353,5 @@ def main():
     print(f"{'#'*70}\n")
 
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     main()
