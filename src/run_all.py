@@ -352,3 +352,6 @@ def main():
     print(f"✅ ALL EXPERIMENTS COMPLETED!")
     print(f"{'#'*70}\n")
 
+
+if __name__ == "_main_":
+    main()
