@@ -37,19 +37,25 @@ relevant_model_names = {
         "3-Nearest Neighbors",
         "2-layer NN, GD",
     ],
+    "ar1_linear_regression": [
+        "Transformer",
+        "Least Squares",
+        "3-Nearest Neighbors",
+        "Ridge (alpha=1.0)",
+        "Ridge Var Adj (alpha=1.0, ar=0.5)",
+        "Feasible GLS", 
+        "GLS (ar=0.5)",
+        "Averaging"
+    ],
     "noisy_linear_regression": [
         "Transformer",
         "Least Squares",
         "Ridge (alpha=1.0)",
-        "LPSolverModel",
-        "ADMMModel (rho=1.0)",
-    ],
-    "uniform_hypersphere_regression": [
-        "Transformer",
-        "Least Squares",
-        "Ridge (alpha=1.0)",
-        "LPSolverModel",
-        "ADMMModel (rho=1.0)",
+        "Ridge Var Adj (alpha=1.0, ar=0.5)",
+        "Feasible GLS", 
+        "GLS (ar=0.5)",
+        # "3-Nearest Neighbors",
+        # "Averaging"
     ],
 }
 
@@ -72,7 +78,7 @@ def basic_plot(metrics, models=None, trivial=1.0):
     ax.set_xlabel("in-context examples")
     ax.set_ylabel("squared error")
     ax.set_xlim(-1, len(low) + 0.1)
-    ax.set_ylim(-0.1, 1.25)
+    ax.set_ylim(-0.1, 10)
 
     legend = ax.legend(loc="upper left", bbox_to_anchor=(1, 1))
     fig.set_size_inches(4, 3)
@@ -117,7 +123,7 @@ def collect_results(run_dir, df, valid_row=None, rename_eval=None, rename_model=
                     normalization = 1
 
                 for k, v in m.items():
-                    v = v[:xlim]
+                    # v = v[:xlim]
                     v = [vv / normalization for vv in v]
                     m_processed[k] = v
                 processed_results[model_name] = m_processed

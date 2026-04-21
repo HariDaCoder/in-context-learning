@@ -16,6 +16,21 @@ def mean_squared_error(ys_pred, ys):
     return (ys - ys_pred).square().mean()
 
 
+def huber_loss(ys_pred, ys, delta=1.35):
+    """Huber loss - robust to outliers"""
+    error = ys - ys_pred
+    abs_error = torch.abs(error)
+    quadratic = torch.clamp(abs_error, max=delta)
+    linear = abs_error - quadratic
+    return (0.5 * quadratic.square() + delta * linear).mean()
+
+
+def cauchy_loss(ys_pred, ys):
+    """Cauchy loss - very robust to outliers (for Cauchy noise)"""
+    error = ys - ys_pred
+    return torch.log(1 + error.square()).mean()
+
+
 def accuracy(ys_pred, ys):
     return (ys == ys_pred.sign()).float()
 
@@ -61,18 +76,30 @@ def get_task_sampler(
         "linear_regression": LinearRegression,
         "sparse_linear_regression": SparseLinearRegression,
         "linear_classification": LinearClassification,
+        "uniform_hypersphere_regression": UniformHypersphereRegression,
         "noisy_linear_regression": NoisyLinearRegression,
         "quadratic_regression": QuadraticRegression,
         "relu_2nn_regression": Relu2nnRegression,
         "decision_tree": DecisionTree,
-        "uniform_hypersphere_regression": UniformHypersphereRegression,
+        "ar1_linear_regression": AR1LinearRegression,
+        "exponential_weighted_regression": ExponentialWeightedRegression,
+        "laplace_weighted_regression": LaplaceWeightedRegression,
+        "wlaplace_noisypoisson": wlaplace_noisypoisson,
+        "sparse_regression_killer": SparseRegressionKiller,
+        "heavy_tail_noise_killer": HeavyTailNoiseKiller,
+        "bounded_support_killer": BoundedSupportKiller,
+        "mixture_tasks_killer": MixtureTasksKiller,
+        "transfer_tradeoff_task": TransferTradeoffTask,
     }
+
     if task_name in task_names_to_classes:
         task_cls = task_names_to_classes[task_name]
         if num_tasks is not None:
             if pool_dict is not None:
                 raise ValueError("Either pool_dict or num_tasks should be None.")
             pool_dict = task_cls.generate_pool_dict(n_dims, num_tasks, **kwargs)
+        
+        # Simple return for all tasks - no special case needed
         return lambda **args: task_cls(n_dims, batch_size, pool_dict, **args, **kwargs)
     else:
         print("Unknown task")
@@ -101,11 +128,9 @@ class UniformHypersphereRegression(Task):
 
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)
-        # Scale by sqrt(n_dims) because weights are normalized to unit norm
-        # whereas LinearRegression uses un-normalized random weights with expected norm ~sqrt(n_dims)
-        ys_linear = self.scale * math.sqrt(self.n_dims) * (xs_b @ w_b)[:, :, 0] 
-        # ys_b = ys_linear + torch.randn_like(ys_linear)
-        return ys_linear
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0] 
+        ys_b = ys_linear + torch.randn_like(ys_linear)
+        return ys_b
 
     @staticmethod
     def generate_pool_dict(n_dims, num_tasks):
@@ -120,16 +145,152 @@ class UniformHypersphereRegression(Task):
     @staticmethod
     def get_training_metric():
         return mean_squared_error
+class LaplaceWeightedRegression(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, weight_scale=1.0):
+        super(LaplaceWeightedRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        self.weight_scale = weight_scale # self.weight_scale as weight_scale
+
+        if pool_dict is None and seeds is None:
+            laplace_dist = torch.distributions.Laplace(loc=0, scale=self.weight_scale)
+            self.w_b = laplace_dist.sample((self.b_size, self.n_dims, 1))
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            assert len(seeds) == self.b_size
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                laplace_dist = torch.distributions.Laplace(loc=0, scale=self.weight_scale)
+                self.w_b[i] = laplace_dist.sample((self.n_dims, 1))
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+            
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0] 
+        ys_b = ys_linear + torch.randn_like(ys_linear)
+        return ys_b
+
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, weight_scale=1.0):
+        laplace_dist = torch.distributions.Laplace(loc=0, scale=weight_scale)
+        return {"w": laplace_dist.sample((num_tasks, n_dims, 1))}
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+
+class wlaplace_noisypoisson(Task):
+    def __init__(
+        self,
+        n_dims,
+        batch_size,
+        pool_dict=None,
+        seeds=None,
+        scale=1.0,
+        weight_scale=1.0,
+        poisson_rate=3.0,
+    ):
+        """
+        Task with Laplace-distributed weights, expects exponential-like inputs,
+        and adds centered Poisson noise to the supervision.
+        """
+        super(wlaplace_noisypoisson, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        self.weight_scale = weight_scale
+        self.poisson_rate = float(poisson_rate)
+
+        if pool_dict is None and seeds is None:
+            laplace_dist = torch.distributions.Laplace(loc=0.0, scale=self.weight_scale)
+            self.w_b = laplace_dist.sample((self.b_size, self.n_dims, 1))
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            assert len(seeds) == self.b_size
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                laplace_dist = torch.distributions.Laplace(loc=0.0, scale=self.weight_scale)
+                self.w_b[i] = laplace_dist.sample((self.n_dims, 1))
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0]
+
+        poisson = torch.distributions.Poisson(rate=self.poisson_rate)
+        noise = poisson.sample(ys_linear.shape) - self.poisson_rate
+        noise = noise.to(xs_b.device)
+        return ys_linear + noise
+
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, weight_scale=1.0):
+        laplace_dist = torch.distributions.Laplace(loc=0.0, scale=weight_scale)
+        return {"w": laplace_dist.sample((num_tasks, n_dims, 1))}
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+class ExponentialWeightedRegression(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, rate=1.0):
+        super(ExponentialWeightedRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        self.rate = rate
+
+        if pool_dict is None and seeds is None:
+            exp_dist = torch.distributions.Exponential(rate=self.rate)
+            self.w_b = exp_dist.sample((self.b_size, self.n_dims, 1))
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            assert len(seeds) == self.b_size
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                exp_dist = torch.distributions.Exponential(rate=self.rate)
+                self.w_b[i] = exp_dist.sample((self.n_dims, 1))
+        else: 
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0] 
+        ys_b = ys_linear + torch.randn_like(ys_linear)
+        return ys_b
     
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, rate=1.0):
+        exp_dist = torch.distributions.Exponential(rate=rate)
+        return {"w": exp_dist.sample((num_tasks, n_dims, 1))}
+    
+    @staticmethod
+    def get_metric():
+        return squared_error
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
 class LinearRegression(Task):
-    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, uniform=False):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1,uniform=False):
         """scale: a constant by which to scale the randomly sampled weights."""
         super(LinearRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
         self.scale = scale
 
         if pool_dict is None and seeds is None:
             if uniform:
-                self.w_b = torch.rand(self.b_size, self.n_dims, 1) * 2 - 1
+                self.w_b = torch.rand(self.b_size, self.n_dims, 1)*2 -1
             else:
                 self.w_b = torch.randn(self.b_size, self.n_dims, 1)
         elif seeds is not None:
@@ -160,6 +321,7 @@ class LinearRegression(Task):
     @staticmethod
     def get_training_metric():
         return mean_squared_error
+
 
 
 class SparseLinearRegression(LinearRegression):
@@ -228,7 +390,7 @@ class NoisyLinearRegression(LinearRegression):
         pool_dict=None,
         seeds=None,
         scale=1,
-        noise_std=1.0,
+        noise_std=3,
         renormalize_ys=False,
         noise_type="laplace",  # "normal", "uniform", "laplace", "t-student", "cauchy", "exponential", "rayleigh", "beta", "poisson"        
         w_distribution="beta",
@@ -379,40 +541,6 @@ class NoisyLinearRegression(LinearRegression):
         if self.renormalize_ys:
             ys_b_noisy = ys_b_noisy * math.sqrt(self.n_dims) / ys_b_noisy.std()
         return ys_b_noisy
-    
-    def get_metric(self):
-        """Return metric based on loss_type: L1 (MAE) or L2 (MSE)"""
-        if self.loss_type == "l2":
-            return squared_error
-        else:  # default l1
-            return absolute_error
-
-    def get_training_metric(self):
-        """Return training metric based on loss_type: L1 (MAE) or L2 (MSE)"""
-        if self.loss_type == "l2":
-            return mean_squared_error
-        else:  # default l1
-            return mean_absolute_error
-
-class HeteroskedasticNoisyLinearRegression(NoisyLinearRegression):
-    def __init__(self, *args, alpha=1.0, **kwargs):
-        super(HeteroskedasticNoisyLinearRegression, self).__init__(*args, **kwargs)
-        self.alpha = alpha
-
-    def evaluate(self, xs_b):
-        ys_b = super(LinearRegression, self).evaluate(xs_b)
-
-        # ||x|| per sample
-        x_norm = torch.norm(xs_b, dim=-1, keepdim=True)  # shape (B, N, 1)
-        sigma = (x_norm ** self.alpha)
-
-        noise = self.sample_noise(ys_b.shape, device=ys_b.device)
-        ys_b_noisy = ys_b + sigma.squeeze(-1) * noise
-
-        if self.renormalize_ys:
-            ys_b_noisy = ys_b_noisy * math.sqrt(self.n_dims) / ys_b_noisy.std()
-        
-        return ys_b_noisy
 class QuadraticRegression(LinearRegression):
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)
@@ -506,7 +634,7 @@ class DecisionTree(Task):
             self.target_tensor = torch.randn(self.dt_tensor.shape)
         elif seeds is not None:
             self.dt_tensor = torch.zeros(batch_size, 2 ** (depth + 1) - 1)
-            self.target_tensor = torch.zeros_like(dt_tensor)
+            self.target_tensor = torch.zeros_like(self.dt_tensor)
             generator = torch.Generator()
             assert len(seeds) == self.b_size
             for i, seed in enumerate(seeds):
@@ -550,6 +678,418 @@ class DecisionTree(Task):
     @staticmethod
     def generate_pool_dict(n_dims, num_tasks, hidden_layer_size=4, **kwargs):
         raise NotImplementedError
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+class AR1LinearRegression(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, ar_coef=0.5, noise_std=1.0,compute_gradient=False):
+        """
+        AR(1) Linear Regression: y_t = x_t^T w + epsilon_t
+        where epsilon_t = ar_coef * epsilon_{t-1} + u_t, u_t ~ N(0, noise_std^2)
+        
+        scale: a constant by which to scale the randomly sampled weights
+        ar_coef: AR(1) coefficient for error terms
+        noise_std: standard deviation of innovation noise
+        """
+        super(AR1LinearRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        self.ar_coef = ar_coef
+        self.noise_std = noise_std
+        self.compute_gradient = compute_gradient
+        if pool_dict is None and seeds is None:
+            self.w_b = torch.randn(self.b_size, self.n_dims, 1)
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            assert len(seeds) == self.b_size
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                self.w_b[i] = torch.randn(self.n_dims, 1, generator=generator)
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+
+    def evaluate(self, xs_b):
+        """
+        Generate AR(1) linear regression data with correlated errors
+        """
+        w_b = self.w_b.to(xs_b.device)
+        batch_size, n_points, n_dims = xs_b.shape
+        
+        # Generate linear predictions
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0]
+        
+        # Generate AR(1) error terms
+        ys_ar1 = torch.zeros_like(ys_linear)
+        for b in range(batch_size):
+            # Generate AR(1) process for errors
+            errors = torch.zeros(n_points, device=xs_b.device)
+            for t in range(n_points):
+                if t == 0:
+                    # Initial error
+                    errors[t] = torch.randn(1, device=xs_b.device) * self.noise_std
+                else:
+                    # AR(1) error: epsilon_t = ar_coef * epsilon_{t-1} + u_t
+                    errors[t] = self.ar_coef * errors[t-1] + torch.randn(1, device=xs_b.device) * self.noise_std
+            
+            # Add AR(1) errors to linear predictions
+            ys_ar1[b] = ys_linear[b] + errors
+        
+        return ys_ar1
+
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, **kwargs):
+        return {"w": torch.randn(num_tasks, n_dims, 1)}
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+class SparseRegressionKiller(Task):
+    """
+    Case 1: Sparse Regression - "Ridge Trap"
+    Prior: Spike-and-Slab (only k=2 dims are non-zero)
+    Shows Bayesian advantage over Ridge/OLS
+    """
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, k_sparse=2):
+        super(SparseRegressionKiller, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        self.k_sparse = k_sparse
+        
+        if pool_dict is None and seeds is None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            # Only k_sparse dimensions are non-zero, sampled from Uniform[-1,1]
+            for i in range(self.b_size):
+                active_dims = torch.randperm(self.n_dims)[:self.k_sparse]
+                self.w_b[i, active_dims, 0] = torch.rand(self.k_sparse) * 2 - 1
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                active_dims = torch.randperm(self.n_dims, generator=generator)[:self.k_sparse]
+                self.w_b[i, active_dims, 0] = torch.rand(self.k_sparse, generator=generator) * 2 - 1
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+    
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_b = self.scale * (xs_b @ w_b)[:, :, 0]
+        return ys_b
+    
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, k_sparse=2, **kwargs):
+        w = torch.zeros(num_tasks, n_dims, 1)
+        for i in range(num_tasks):
+            active_dims = torch.randperm(n_dims)[:k_sparse]
+            w[i, active_dims, 0] = torch.rand(k_sparse) * 2 - 1
+        return {"w": w}
+    
+    @staticmethod
+    def get_metric():
+        return squared_error
+    
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+
+class HeavyTailNoiseKiller(Task):
+    """
+    Case 2: Heavy-tailed Noise - "OLS Enemy"
+    Noise: Student-t with low df (reduced variance) or Cauchy (scaled down)
+    Shows robustness of Bayesian vs OLS
+    """
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, 
+                 noise_type="t-student", df=3.0, noise_scale=0.5):
+        super(HeavyTailNoiseKiller, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        self.noise_type = noise_type
+        self.df = df
+        self.noise_scale = noise_scale  # Reduced scale for learnable regime
+        
+        if pool_dict is None and seeds is None:
+            self.w_b = torch.randn(self.b_size, self.n_dims, 1)
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                self.w_b[i] = torch.randn(self.n_dims, 1, generator=generator)
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+    
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_linear = self.scale * (xs_b @ w_b)[:, :, 0]
+        
+        # Add heavy-tail noise with reduced variance
+        if self.noise_type == "t-student":
+            noise_dist = torch.distributions.StudentT(df=self.df)
+            noise = noise_dist.sample(ys_linear.shape).to(xs_b.device) * self.noise_scale
+        elif self.noise_type == "cauchy":
+            noise_dist = torch.distributions.Cauchy(loc=0, scale=self.noise_scale)
+            noise = noise_dist.sample(ys_linear.shape).to(xs_b.device)
+        else:
+            raise ValueError(f"Unknown noise_type: {self.noise_type}")
+        
+        return ys_linear + noise
+    
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, **kwargs):
+        return {"w": torch.randn(num_tasks, n_dims, 1)}
+    
+    @staticmethod
+    def get_metric():
+        return squared_error
+    
+    @staticmethod
+    def get_training_metric():
+        # Use Huber loss for robustness to outliers
+        def robust_loss(ys_pred, ys):
+            return huber_loss(ys_pred, ys, delta=1.0)
+        return robust_loss
+
+
+class BoundedSupportKiller(Task):
+    """
+    Case 3: Bounded Support - "Sign Constraint"
+    Prior: w ~ Exponential (w > 0 always)
+    Input: x ~ Uniform[0, 1] (positive only)
+    OLS can predict negative w, Bayes respects constraint
+    """
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, rate=1.0):
+        super(BoundedSupportKiller, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        self.rate = rate
+        
+        if pool_dict is None and seeds is None:
+            exp_dist = torch.distributions.Exponential(rate=self.rate)
+            self.w_b = exp_dist.sample((self.b_size, self.n_dims, 1))
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                exp_dist = torch.distributions.Exponential(rate=self.rate)
+                # Manual sampling with generator
+                u = torch.rand(self.n_dims, 1, generator=generator)
+                self.w_b[i] = -torch.log(u) / self.rate
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+    
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_b = self.scale * (xs_b @ w_b)[:, :, 0]
+        return ys_b
+    
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, rate=1.0, **kwargs):
+        exp_dist = torch.distributions.Exponential(rate=rate)
+        return {"w": exp_dist.sample((num_tasks, n_dims, 1))}
+    
+    @staticmethod
+    def get_metric():
+        return squared_error
+    
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+
+class MixtureTasksKiller(Task):
+    """
+    Case 4: Mixture of Tasks - "Averaging Death"
+    Prior: 50% y = w^T x, 50% y = -w^T x
+    OLS averages to 0, Bayes maintains bimodal posterior
+    """
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1):
+        super(MixtureTasksKiller, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        
+        if pool_dict is None and seeds is None:
+            # Sample base w
+            w_base = torch.randn(self.b_size, self.n_dims, 1)
+            # Randomly flip sign for 50% of tasks
+            signs = torch.randint(0, 2, (self.b_size, 1, 1)) * 2 - 1  # {-1, +1}
+            self.w_b = w_base * signs
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                w_base = torch.randn(self.n_dims, 1, generator=generator)
+                sign = torch.randint(0, 2, (1,), generator=generator).item() * 2 - 1
+                self.w_b[i] = w_base * sign
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+    
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_b = self.scale * (xs_b @ w_b)[:, :, 0]
+        return ys_b
+    
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, **kwargs):
+        w_base = torch.randn(num_tasks, n_dims, 1)
+        signs = torch.randint(0, 2, (num_tasks, 1, 1)) * 2 - 1
+        return {"w": w_base * signs}
+    
+    @staticmethod
+    def get_metric():
+        return squared_error
+    
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+
+class TransferTradeoffTask(Task):
+    """
+    Case 5: Transfer Tradeoff - p×N experiment (Wakayama)
+    Tests Bayes Gap (N) vs Posterior Variance (p)
+    Use with different (N, p) configurations
+    """
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, 
+                 prior_type="mixture_gaussian", mixture_std=2.0):
+        super(TransferTradeoffTask, self).__init__(n_dims, batch_size, pool_dict, seeds)
+        self.scale = scale
+        self.prior_type = prior_type
+        self.mixture_std = mixture_std
+        
+        if pool_dict is None and seeds is None:
+            if prior_type == "mixture_gaussian":
+                # Mixture: 50% N(0,1) + 50% N(0, mixture_std^2)
+                mode = torch.randint(0, 2, (self.b_size,))
+                self.w_b = torch.randn(self.b_size, self.n_dims, 1)
+                self.w_b[mode == 1] *= self.mixture_std
+            elif prior_type == "sparse":
+                # Sparse prior (like Case 1)
+                self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+                k_sparse = max(2, n_dims // 10)
+                for i in range(self.b_size):
+                    active = torch.randperm(n_dims)[:k_sparse]
+                    self.w_b[i, active, 0] = torch.randn(k_sparse)
+            else:
+                raise ValueError(f"Unknown prior_type: {prior_type}")
+        elif seeds is not None:
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            generator = torch.Generator()
+            for i, seed in enumerate(seeds):
+                generator.manual_seed(seed)
+                if prior_type == "mixture_gaussian":
+                    mode = torch.randint(0, 2, (1,), generator=generator).item()
+                    w = torch.randn(self.n_dims, 1, generator=generator)
+                    if mode == 1:
+                        w *= self.mixture_std
+                    self.w_b[i] = w
+                elif prior_type == "sparse":
+                    k_sparse = max(2, n_dims // 10)
+                    active = torch.randperm(n_dims, generator=generator)[:k_sparse]
+                    self.w_b[i, active, 0] = torch.randn(k_sparse, generator=generator)
+        else:
+            assert "w" in pool_dict
+            indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
+            self.w_b = pool_dict["w"][indices]
+    
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_b = self.scale * (xs_b @ w_b)[:, :, 0]
+        return ys_b
+    
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, prior_type="mixture_gaussian", 
+                          mixture_std=2.0, **kwargs):
+        if prior_type == "mixture_gaussian":
+            mode = torch.randint(0, 2, (num_tasks,))
+            w = torch.randn(num_tasks, n_dims, 1)
+            w[mode == 1] *= mixture_std
+        elif prior_type == "sparse":
+            w = torch.zeros(num_tasks, n_dims, 1)
+            k_sparse = max(2, n_dims // 10)
+            for i in range(num_tasks):
+                active = torch.randperm(n_dims)[:k_sparse]
+                w[i, active, 0] = torch.randn(k_sparse)
+        return {"w": w}
+    
+    @staticmethod
+    def get_metric():
+        return squared_error
+    
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+class ScaleMismatchTask(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, train_mode=True):
+        super().__init__(n_dims, batch_size, pool_dict, seeds)
+        if train_mode:
+            self.w_b = torch.rand(self.b_size, self.n_dims, 1) * 2 - 1
+        else:
+            self.w_b = torch.randn(self.b_size, self.n_dims, 1) + 100
+
+        def evaluate(self, xs_b):
+            w_b = self.w_b.to(xs_b.device)
+            ys_b = (xs_b @ w_b)[:, :, 0]
+            return ys_b
+
+        @staticmethod
+        def get_metric():
+            return squared_error
+
+        @staticmethod
+        def get_training_metric():
+            return mean_squared_error
+
+class DenseTestKiller(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None):
+        # w dense: all dimensions = 0.5
+        self.w_b = torch.ones(batch_size, n_dims, 1) * 0.5
+
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_b = (xs_b @ w_b)[:, :, 0]
+        return ys_b
+    
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+class MixedTaskKiller(Task):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None):
+        super().__init__(n_dims, batch_size, pool_dict, seeds)
+        self.w_b = torch.randn(batch_size, n_dims, 1)
+        self.is_sin = torch.randint(0, 2, (batch_size,))
+
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys = xs_b @ w_b[:, :, 0]
+        for i in range(self.b_size):
+            if self.is_sin[i]:
+                ys[i] = torch.sin(ys[i])
+        return us
 
     @staticmethod
     def get_metric():

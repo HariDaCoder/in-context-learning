@@ -1,20 +1,20 @@
-inherit: 
-    - models/standard.yaml
-    - wandb.yaml
-
 model:
-    n_dims: 5
-    n_positions: 11
-
+  family: gpt2
+  n_dims: 5
+  n_embd: 256
+  n_head: 8
+  n_layer: 12
+  n_positions: 11
 training:
     task: noisy_linear_regression
     data: gaussian
     task_kwargs: {}
+    data_kwargs: {}
     batch_size: 64
     learning_rate: 0.0001
     save_every_steps: 1000
     keep_every_steps: 100000
-    train_steps: 100001
+    train_steps: 50001
     curriculum:
         dims:
             start: 5
@@ -30,4 +30,8 @@ training:
 out_dir: ../models/linear_regression
 
 wandb:
-    name: "linear_regression_toy"
+  entity: haitrinh220970-hcmut
+  log_every_steps: 100
+  name: final
+  notes: ''
+  project: in-context-training

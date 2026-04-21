@@ -2,6 +2,7 @@ import os
 from random import randint
 import uuid
 
+import curriculum
 from quinine import QuinineArgumentParser
 from tqdm import tqdm
 import torch
@@ -135,8 +136,9 @@ def train(model, args):
         data_sampler_args = {}
         task_sampler_args = {}
 
-        if "sparse" in args.training.task:
+        if args.training.task == "sparse_linear_regression":
             task_sampler_args["valid_coords"] = curriculum.n_dims_truncated
+
         if num_training_examples is not None:
             assert num_training_examples >= bsize
             seeds = sample_seeds(num_training_examples, bsize)
@@ -183,8 +185,8 @@ def train(model, args):
             )
 
         curriculum.update()
-
         pbar.set_description(f"loss {loss}")
+
         if i % args.training.save_every_steps == 0 and not args.test_run:
             training_state = {
                 "model_state_dict": model.state_dict(),
@@ -200,7 +202,6 @@ def train(model, args):
             and i > 0
         ):
             torch.save(model.state_dict(), os.path.join(args.out_dir, f"model_{i}.pt"))
-
 
 def main(args):
     if args.test_run:
