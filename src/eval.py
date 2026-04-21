@@ -14,6 +14,174 @@ from samplers import get_data_sampler, sample_transformation
 from tasks import get_task_sampler
 
 
+DATA_KWARGS_WHITELIST = {
+    "gaussian": {"bias", "scale"},
+    "sparse_gaussian": {"k", "bias", "scale"},
+    "ar1": {"rho", "noise_std", "bias", "scale", "compute_gradient"},
+    "vr1": {"ar1_mat", "noise_std", "bias", "scale"},
+    "ar2": {"ar1_coef", "ar2_coef", "noise_std", "bias", "scale"},
+    "vr2": {"ar1_mat", "ar2_mat", "noise_std", "bias", "scale"},
+    "nonstation": {"coef_base", "coef_amplitude", "noise_std", "bias", "scale"},
+    "exponential": {"bias", "scale", "rate"},
+    "laplace": {"bias", "scale", "loc", "laplace_scale"},
+    "gamma": {"bias", "scale", "concentration", "rate"},
+    "beta": {"bias", "scale", "alpha", "beta"},
+    "uniform": {"bias", "scale", "low", "high"},
+    "poisson": {"bias", "scale", "rate"},
+    "tstudent": {"bias", "scale", "df"},
+    "rayleigh": {"bias", "scale", "scale_param"},
+    "cauchy": {"bias", "scale", "loc", "scale_param"},
+}
+
+TASK_KWARGS_WHITELIST = {
+    "linear_regression": {"scale", "uniform"},
+    "sparse_linear_regression": {"scale", "sparsity", "valid_coords"},
+    "linear_classification": {"scale", "uniform"},
+    "relu_2nn_regression": {"scale", "hidden_layer_size"},
+    "decision_tree": {"depth"},
+    "noisy_linear_regression": {
+        "scale",
+        "noise_std",
+        "renormalize_ys",
+        "noise_type",
+        "uniform",
+        "w_distribution",
+        "w_kwargs",
+        "noise_kwargs",
+        "loss_type",
+    },
+    "uniform_hypersphere_regression": {"scale"},
+    "sparse_regression_killer": {"scale", "k_sparse"},
+    "heavy_tail_noise_killer": {"scale", "noise_type", "df", "noise_scale"},
+    "bounded_support_killer": {"scale", "rate"},
+    "mixture_tasks_killer": {"scale"},
+    "transfer_tradeoff_task": {"scale", "prior_type", "mixture_std"},
+}
+
+
+def sanitize_sampler_kwargs(task_name, data_name, data_kwargs=None, task_kwargs=None):
+    """Drop unsupported kwargs before constructing samplers/tasks during evaluation."""
+    safe_data_kwargs = dict(data_kwargs or {})
+    safe_task_kwargs = dict(task_kwargs or {})
+
+    allowed_data = DATA_KWARGS_WHITELIST.get(data_name, set())
+    allowed_task = TASK_KWARGS_WHITELIST.get(task_name, set())
+
+    safe_data_kwargs = {k: v for k, v in safe_data_kwargs.items() if k in allowed_data}
+    safe_task_kwargs = {k: v for k, v in safe_task_kwargs.items() if k in allowed_task}
+    return safe_data_kwargs, safe_task_kwargs
+
+
+def _format_scale_tag(scale):
+    return f"{float(scale):g}".replace(".", "p")
+
+
+def build_benign_harmful_dynamics_evals(
+    conf,
+    ood_noise_scales=(0.5, 1.0, 1.5, 2.0),
+    include_nonstation=False,
+    nonstation_data_kwargs=None,
+    use_noise_multipliers=True,
+):
+    """
+    Build ID/OOD evaluation settings for benign-vs-harmful dynamics.
+
+    - ID: same distribution as training.
+    - OOD (noise): same task/data except Gaussian label-noise magnitude is varied.
+    - OOD (nonstation): optional input-distribution shift via nonstation data sampler.
+    """
+    if conf.training.task != "noisy_linear_regression":
+        raise ValueError(
+            "build_benign_harmful_dynamics_evals currently supports noisy_linear_regression only."
+        )
+
+    n_dims = conf.model.n_dims
+    n_points = conf.training.curriculum.points.end
+    batch_size = conf.training.batch_size
+    task_name = conf.training.task
+    data_name = conf.training.data
+
+    original_data_kwargs = (
+        conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {}
+    )
+    original_task_kwargs = (
+        conf.training.task_kwargs if hasattr(conf.training, "task_kwargs") else {}
+    )
+    cleaned_data_kwargs, cleaned_task_kwargs = sanitize_sampler_kwargs(
+        task_name,
+        data_name,
+        original_data_kwargs,
+        original_task_kwargs,
+    )
+
+    base_kwargs = {
+        "task_name": task_name,
+        "n_dims": n_dims,
+        "n_points": n_points,
+        "batch_size": batch_size,
+        "data_name": data_name,
+        "prompting_strategy": "standard",
+        "data_sampler_kwargs": cleaned_data_kwargs,
+        "task_sampler_kwargs": cleaned_task_kwargs,
+    }
+
+    evals = {"id": base_kwargs.copy()}
+    base_noise_std = float(cleaned_task_kwargs.get("noise_std", 0.0))
+
+    for scale in ood_noise_scales:
+        scale = float(scale)
+        if use_noise_multipliers:
+            noise_std = base_noise_std * scale if base_noise_std > 0 else scale
+            eval_name = f"ood_gaussian_noise_x{_format_scale_tag(scale)}"
+        else:
+            noise_std = scale
+            eval_name = f"ood_gaussian_noise_std{_format_scale_tag(scale)}"
+
+        ood_task_kwargs = dict(cleaned_task_kwargs)
+        ood_task_kwargs["noise_type"] = "normal"
+        ood_task_kwargs["noise_std"] = noise_std
+
+        ood_eval = base_kwargs.copy()
+        ood_eval["task_sampler_kwargs"] = ood_task_kwargs
+        evals[eval_name] = ood_eval
+
+    if include_nonstation:
+        default_nonstation = {"coef_base": 0.5, "coef_amplitude": 0.4, "noise_std": 0.1}
+        nonstation_data_kwargs = nonstation_data_kwargs or default_nonstation
+        cleaned_nonstation_kwargs, _ = sanitize_sampler_kwargs(
+            task_name,
+            "nonstation",
+            nonstation_data_kwargs,
+            cleaned_task_kwargs,
+        )
+
+        for scale in ood_noise_scales:
+            scale = float(scale)
+            if use_noise_multipliers:
+                noise_std = base_noise_std * scale if base_noise_std > 0 else scale
+                eval_name = f"ood_nonstation_gaussian_noise_x{_format_scale_tag(scale)}"
+            else:
+                noise_std = scale
+                eval_name = f"ood_nonstation_gaussian_noise_std{_format_scale_tag(scale)}"
+
+            ood_task_kwargs = dict(cleaned_task_kwargs)
+            ood_task_kwargs["noise_type"] = "normal"
+            ood_task_kwargs["noise_std"] = noise_std
+
+            evals[eval_name] = {
+                "task_name": task_name,
+                "n_dims": n_dims,
+                "n_points": n_points,
+                "batch_size": batch_size,
+                "data_name": "nonstation",
+                "prompting_strategy": "standard",
+                "data_sampler_kwargs": cleaned_nonstation_kwargs,
+                "task_sampler_kwargs": ood_task_kwargs,
+            }
+
+    return evals
+
+
 def get_model_from_run(run_path, step=-1, only_conf=False):
     config_path = os.path.join(run_path, "config.yaml")
     with open(config_path) as fp:  # we don't Quinfig it to avoid inherits
@@ -25,11 +193,11 @@ def get_model_from_run(run_path, step=-1, only_conf=False):
 
     if step == -1:
         state_path = os.path.join(run_path, "state.pt")
-        state = torch.load(state_path)
+        state = torch.load(state_path, map_location="cpu")
         model.load_state_dict(state["model_state_dict"])
     else:
         model_path = os.path.join(run_path, f"model_{step}.pt")
-        state_dict = torch.load(model_path)
+        state_dict = torch.load(model_path, map_location="cpu")
         model.load_state_dict(state_dict)
 
     return model, conf
@@ -159,6 +327,7 @@ def eval_model(
     batch_size=64,
     data_sampler_kwargs={},
     task_sampler_kwargs={},
+    verbose=False,
 ):
     """
     Evaluate a model on a task with a variety of strategies.
@@ -168,22 +337,29 @@ def eval_model(
        - num_eval_examples: total number of examples to evaluate on
        - **sampler_kwargs: remaining arguments to pass directly to the sampler
     """
-    print(f"[DEBUG] eval_model: task={task_name}, data={data_name}, strategy={prompting_strategy}")
+    if verbose:
+        print(
+            f"[DEBUG] eval_model: task={task_name}, data={data_name}, strategy={prompting_strategy}"
+        )
 
     assert num_eval_examples % batch_size == 0
-    print(f"[DEBUG] Creating data sampler with kwargs: {data_sampler_kwargs}")
+    if verbose:
+        print(f"[DEBUG] Creating data sampler with kwargs: {data_sampler_kwargs}")
     data_sampler = get_data_sampler(data_name, n_dims, **data_sampler_kwargs)
-    print(f"[DEBUG] Creating task sampler with kwargs: {task_sampler_kwargs}")
+    if verbose:
+        print(f"[DEBUG] Creating task sampler with kwargs: {task_sampler_kwargs}")
     task_sampler = get_task_sampler(
         task_name, n_dims, batch_size, **task_sampler_kwargs
     )
-    print(f"[DEBUG] Samplers created, starting eval batches...")
+    if verbose:
+        print("[DEBUG] Samplers created, starting eval batches...")
 
     all_metrics = []
 
     generating_func = globals()[f"gen_{prompting_strategy}"]
     for i in range(num_eval_examples // batch_size):
-        print(f"[DEBUG]   Batch {i+1}/{num_eval_examples // batch_size}")
+        if verbose:
+            print(f"[DEBUG]   Batch {i+1}/{num_eval_examples // batch_size}")
         xs, xs_p = generating_func(data_sampler, n_points, batch_size)
 
         metrics = eval_batch(model, task_sampler, xs, xs_p)
@@ -202,43 +378,18 @@ def build_evals(conf):
     task_name = conf.training.task
     data_name = conf.training.data
 
-    # Sanitize kwargs to avoid passing unsupported keys during evaluation
-    data_whitelist = {
-        "gaussian": {"bias", "scale"},
-        "sparse_gaussian": {"k", "bias", "scale"},
-        "ar1": {"rho", "noise_std", "bias", "scale", "compute_gradient"},
-        "vr1": {"ar1_mat", "noise_std", "bias", "scale"},
-        "ar2": {"ar1_coef", "ar2_coef", "noise_std", "bias", "scale"},
-        "vr2": {"ar1_mat", "ar2_mat", "noise_std", "bias", "scale"},
-        "nonstation": {"coef_base", "coef_amplitude", "noise_std", "bias", "scale"},
-        "exponential": {"bias", "scale", "rate"},
-        "laplace": {"bias", "scale", "loc", "laplace_scale"},
-        "gamma": {"bias", "scale", "concentration", "rate"},
-        "beta": {"bias", "scale", "alpha", "beta"},
-        "uniform": {"bias", "scale", "low", "high"},
-    }
-    task_whitelist = {
-        "linear_regression": {"scale", "uniform"},
-        "sparse_linear_regression": {"scale", "sparsity", "valid_coords"},
-        "linear_classification": {"scale", "uniform"},
-        "relu_2nn_regression": {"scale", "hidden_layer_size"},
-        "decision_tree": {"depth"},
-        "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform", "w_distribution", "w_kwargs", "noise_kwargs", "loss_type"},
-        "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
-        "uniform_hypersphere_regression": {"scale"},
-        "linear_regression": {"scale", "uniform"},
-        "sparse_linear_regression": {"scale", "sparsity", "valid_coords"},
-        "sparse_regression_killer": {"scale", "k_sparse"},
-        "heavy_tail_noise_killer": {"scale", "noise_type", "df", "noise_scale"},
-        "bounded_support_killer": {"scale", "rate"},
-        "mixture_tasks_killer": {"scale"},
-        "transfer_tradeoff_task": {"scale", "prior_type", "mixture_std"},
-    
-    }
-    original_data_kwargs = conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {}
-    original_task_kwargs = conf.training.task_kwargs if hasattr(conf.training, "task_kwargs") else {}
-    cleaned_data_kwargs = {k: v for k, v in (original_data_kwargs or {}).items() if k in data_whitelist.get(data_name, set())}
-    cleaned_task_kwargs = {k: v for k, v in (original_task_kwargs or {}).items() if k in task_whitelist.get(task_name, set())}
+    original_data_kwargs = (
+        conf.training.data_kwargs if hasattr(conf.training, "data_kwargs") else {}
+    )
+    original_task_kwargs = (
+        conf.training.task_kwargs if hasattr(conf.training, "task_kwargs") else {}
+    )
+    cleaned_data_kwargs, cleaned_task_kwargs = sanitize_sampler_kwargs(
+        task_name,
+        data_name,
+        original_data_kwargs,
+        original_task_kwargs,
+    )
 
     base_kwargs = {
         "task_name": task_name,
@@ -321,7 +472,7 @@ def build_evals(conf):
         return evaluation_kwargs
 
     # Case 2: Over-Skeptic OOD test
-    if conf.training.task == "noisy_linear_regression" and conf.training.task_kwargs.get("noise_std", 0) >= 20:
+    if conf.training.task == "noisy_linear_regression" and (original_task_kwargs or {}).get("noise_std", 0) >= 20:
         evaluation_kwargs = {}
         # Standard eval (noisy)
         evaluation_kwargs["standard"] = base_kwargs.copy()
@@ -332,7 +483,7 @@ def build_evals(conf):
         evaluation_kwargs["ood_clean"] = ood_kwargs
         return evaluation_kwargs
     # Case 3: Anti-Sparsity Trap (Train sparse, eval densee)
-    if conf.training.task == "sparse_linear_regression" and conf.training.task_kwargs.get("sparsity", 0) <= 2:
+    if conf.training.task == "sparse_linear_regression" and (original_task_kwargs or {}).get("sparsity", 0) <= 2:
         evaluation_kwargs = {}
         evaluation_kwargs = {}
         # Standard eval (mixed)
@@ -395,7 +546,12 @@ def compute_evals(all_models, evaluation_kwargs, save_path=None, recompute=False
 
 
 def get_run_metrics(
-    run_path, step=-1, cache=True, skip_model_load=False, skip_baselines=False
+    run_path,
+    step=-1,
+    cache=True,
+    skip_model_load=False,
+    skip_baselines=True,
+    evaluation_kwargs_override=None,
 ):
     print(f"[DEBUG] get_run_metrics: run_path={run_path}, step={step}, skip_baselines={skip_baselines}")
     
@@ -406,9 +562,10 @@ def get_run_metrics(
     else:
         print(f"[DEBUG] Loading model and config...")
         model, conf = get_model_from_run(run_path, step)
-        print(f"[DEBUG] Model loaded, moving to CUDA...")
-        model = model.cuda().eval()
-        print(f"[DEBUG] Model on CUDA, preparing baseline models...")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"[DEBUG] Model loaded, moving to {device.upper()}...")
+        model = model.to(device).eval()
+        print(f"[DEBUG] Model on {device.upper()}, preparing baseline models...")
         all_models = [model]
         if not skip_baselines:
             print(f"[DEBUG] Getting relevant baselines for task: {conf.training.task}")
@@ -416,7 +573,10 @@ def get_run_metrics(
             print(f"[DEBUG] Total models: {len(all_models)}")
     
     print(f"[DEBUG] Building evaluation kwargs...")
-    evaluation_kwargs = build_evals(conf)
+    if evaluation_kwargs_override is None:
+        evaluation_kwargs = build_evals(conf)
+    else:
+        evaluation_kwargs = evaluation_kwargs_override
     print(f"[DEBUG] Evaluation kwargs built, total evals: {len(evaluation_kwargs)}")
 
     if not cache:
@@ -516,4 +676,4 @@ if __name__ == "__main__":
         print(f"Evaluating task {task}")
         for run_id in tqdm(os.listdir(task_dir)):
             run_path = os.path.join(run_dir, task, run_id)
-            metrics = get_run_metrics(run_path)
+            metrics = get_run_metrics(run_path, skip_baselines=True)

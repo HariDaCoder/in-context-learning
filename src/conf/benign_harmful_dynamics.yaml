@@ -1,0 +1,55 @@
+inherit:
+  - models/standard.yaml
+  - wandb.yaml
+
+model:
+  family: gpt2
+  n_dims: 20
+  n_embd: 256
+  n_head: 8
+  n_layer: 12
+  n_positions: 101
+
+training:
+  batch_size: 64
+  curriculum:
+    dims:
+      start: 5
+      end: 20
+      inc: 1
+      interval: 2000
+    points:
+      start: 11
+      end: 41
+      inc: 2
+      interval: 2000
+
+  # ID training distribution
+  data: gaussian
+  data_kwargs: {}
+
+  # Gaussian w and Gaussian label noise
+  task: noisy_linear_regression
+  task_kwargs:
+    noise_type: normal
+    noise_std: 0.5
+    w_distribution: gaussian
+    w_kwargs:
+      scale: 1.0
+    loss_type: l2
+
+  learning_rate: 0.0001
+  keep_every_steps: 5000
+  save_every_steps: 500
+  train_steps: 100001
+  num_tasks: null
+  num_training_examples: null
+  resume_id: null
+
+out_dir: ../models/benign_harmful_dynamics
+
+wandb:
+  project: "in-context-training"
+  name: "benign-harmful-dynamics-gaussian"
+  notes: "Train on Gaussian data/weights, then evaluate ID vs OOD Gaussian noise scales and nonstation shift by checkpoint."
+  log_every_steps: 100
