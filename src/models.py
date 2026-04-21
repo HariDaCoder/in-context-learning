@@ -79,6 +79,18 @@ def get_relevant_baselines(task_name):
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),
         ],
+        "uniform_hypersphere_regression": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 1.0}),
+            (LPSolverModel, {}),
+            (ADMMModel, {"rho": 1.0}),
+        ],
+        "noisy_linear_regression": [
+            (LeastSquaresModel, {}),
+            (RidgeModel, {"alpha": 1.0}),
+            (LPSolverModel, {}),
+            (ADMMModel, {"rho": 1.0}),
+        ],
         "linear_classification": [
             (NNModel, {"n_neighbors": 3}),
             (AveragingModel, {}),

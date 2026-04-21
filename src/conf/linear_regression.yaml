@@ -1,5 +1,14 @@
-inherit: 
-    - base.yaml
+inherit:
+  - models/standard.yaml
+  - wandb.yaml
+
+model:
+  family: gpt2
+  n_dims: 20
+  n_embd: 256
+  n_head: 8
+  n_layer: 12
+  n_positions: 101
 
 training:
     task: noisy_linear_regression
@@ -13,6 +22,7 @@ training:
             interval: 2000
 
 out_dir: ../models/linear_regression
+# out_dir: ../models/noisy_linear_regression
 
 wandb:
     name: "linear_regression_standard_test 04"

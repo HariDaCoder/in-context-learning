@@ -167,13 +167,153 @@ class GaussianSampler(DataSampler):
             assert len(seeds) == b_size
             for i, seed in enumerate(seeds):
                 generator.manual_seed(seed)
-                xs_b[i] = torch.randn(n_points, self.n_dims, generator=generator)
+                xs_b[i] = torch.randn(n_points, self.n_dims, generator=generator, device=device)
         if self.scale is not None:
             xs_b = xs_b @ self.scale
         if self.bias is not None:
             xs_b += self.bias
         if n_dims_truncated is not None:
             xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
+
+class BetaSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, alpha=2.0, beta=5.0):
+        super().__init__(n_dims)
+        if alpha <= 0 or beta <= 0:
+            raise ValueError("alpha and beta must be positive for Beta distribution.")
+        self.bias = bias
+        self.scale = scale
+        self.alpha = float(alpha)
+        self.beta = float(beta)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
+        beta_dist = torch.distributions.Beta(concentration1=self.alpha, concentration0=self.beta)
+        xs_b = _sample_distribution(beta_dist, b_size, (n_points, self.n_dims), seeds, device)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+    
+class TStudentSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, df=3.0):
+        super().__init__(n_dims)
+        self.df = float(df)
+        self.bias = bias
+        self.scale = scale
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
+        t_dist = torch.distributions.StudentT(df=self.df)
+        xs_b = _sample_distribution(t_dist, b_size, (n_points, self.n_dims), seeds, device)
+        
+        if self.scale is not None:
+            xs_b = xs_b * self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
+class PoissonSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, rate=1.0):
+        super().__init__(n_dims)
+        self.rate = float(rate)
+        self.bias = bias
+        self.scale = scale
+        
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
+        poisson_dist = torch.distributions.Poisson(rate=self.rate)
+        xs_b = _sample_distribution(poisson_dist, b_size, (n_points, self.n_dims), seeds, device)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
+class RayleighSampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, scale_param=1.0):
+        super().__init__(n_dims)
+        self.bias = bias
+        self.scale = scale
+        self.scale_param = float(scale_param)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
+        rayleigh_dist = torch.distributions.Rayleigh(scale=self.scale_param)
+        xs_b = _sample_distribution(rayleigh_dist, b_size, (n_points, self.n_dims), seeds, device)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+        return xs_b
+
+class CauchySampler(DataSampler):
+    def __init__(self, n_dims, bias=None, scale=None, loc=0.0, scale_param=1.0):
+        super().__init__(n_dims)
+        self.bias = bias
+        self.scale = scale
+        self.loc = float(loc)
+        self.scale_param = float(scale_param)
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
+        cauchy_dist = torch.distributions.Cauchy(loc=self.loc, scale=self.scale_param)
+        xs_b = _sample_distribution(cauchy_dist, b_size, (n_points, self.n_dims), seeds, device)
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+
+        return xs_b
+
+class SparseGaussianSampler(DataSampler):
+    def __init__(self, n_dims, k, bias=None, scale=None):
+        super().__init__(n_dims)
+        if not (0 < k <= n_dims):
+            raise ValueError(f"k must be in range (0, {n_dims}]")
+        self.k = int(k)
+        self.bias = bias
+        # Store scale as float
+        self.scale = float(scale) if isinstance(scale, (int, float)) else 1.0
+    
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None, device="cpu"):
+        if seeds is None:
+            xs_b = torch.zeros(b_size, n_points, self.n_dims, device=device)
+            values = torch.randn(b_size, n_points, self.k, device=device)
+            rand_scores = torch.rand(b_size, n_points, self.n_dims, device=device)
+            _, indices = torch.topk(rand_scores, self.k, dim=-1)
+            xs_b.scatter_(dim=2, index=indices, src=values)
+        else:
+            xs_b = torch.zeros(b_size, n_points, self.n_dims, device=device)
+            assert len(seeds) == b_size
+            for i in range(b_size):
+                generator = torch.Generator(device=device).manual_seed(int(seeds[i]))
+                values = torch.randn(n_points, self.k, generator=generator, device=device)
+                rand_scores = torch.rand(n_points, self.n_dims, generator=generator, device=device)
+                _, indices = torch.topk(rand_scores, self.k, dim=-1)
+                xs_b[i].scatter_(dim=1, index=indices, src=values)
+
+        if self.scale is not None:
+            # Simple scalar multiplication 
+            xs_b = xs_b * self.scale
+            
+        if self.bias is not None:
+            xs_b += self.bias
+            
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+            
         return xs_b
 
 

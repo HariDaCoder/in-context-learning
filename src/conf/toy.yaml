@@ -6,7 +6,7 @@ model:
   n_layer: 12
   n_positions: 11
 training:
-    task: linear_regression
+    task: noisy_linear_regression
     data: gaussian
     task_kwargs: {}
     data_kwargs: {}
