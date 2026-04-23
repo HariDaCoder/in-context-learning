@@ -32,7 +32,7 @@ training:
   task: noisy_linear_regression
   task_kwargs:
     noise_type: normal
-    noise_std: 0.5
+    noise_std: 0.0
     w_distribution: gaussian
     w_kwargs:
       scale: 1.0

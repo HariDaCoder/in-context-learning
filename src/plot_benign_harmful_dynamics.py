@@ -2,8 +2,11 @@ import argparse
 import json
 import os
 import re
+from urllib.parse import urlparse
 
 try:
+    import matplotlib
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 except ImportError:
     plt = None
@@ -13,12 +16,57 @@ try:
 except ImportError:
     torch = None
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
 
 CHECKPOINT_PATTERN = re.compile(r"^model_(\d+)\.pt$")
 
 
 def _decode_scale_tag(tag):
     return float(tag.replace("p", "."))
+
+
+def _normalize_wandb_run_ref(run_ref):
+    """Convert a W&B URL or path to the api.run() ref format: entity/project/run_id."""
+    if not run_ref:
+        return None
+
+    ref = run_ref.strip()
+    if "://" in ref:
+        ref = urlparse(ref).path
+
+    parts = [part for part in ref.strip("/").split("/") if part]
+    if "runs" in parts:
+        runs_idx = parts.index("runs")
+        if runs_idx >= 2 and runs_idx + 1 < len(parts):
+            return "/".join([parts[runs_idx - 2], parts[runs_idx - 1], parts[runs_idx + 1]])
+    if len(parts) >= 3:
+        return "/".join(parts[-3:])
+    return ref
+
+
+def _load_wandb_series(run_ref, metric_name="overall_loss"):
+    """Load a metric series from a W&B run history."""
+    if wandb is None:
+        raise ImportError("Missing dependency: wandb. Please install wandb to load W&B history.")
+
+    api = wandb.Api()
+    run = api.run(_normalize_wandb_run_ref(run_ref))
+
+    steps = []
+    values = []
+    for row in run.scan_history(keys=["_step", metric_name]):
+        step = row.get("_step")
+        value = row.get(metric_name)
+        if step is None or value is None:
+            continue
+        steps.append(int(step))
+        values.append(float(value))
+
+    return steps, values
 
 
 def _extract_loss_scalar(metric_dict, reduction):
@@ -93,7 +141,7 @@ def _detect_harmful_onset(steps, id_losses, ood_losses, rel_threshold, abs_thres
     }
 
 
-def _plot_series(steps, series, transitions, output_path, reduction):
+def _plot_series(steps, series, transitions, output_path, reduction, train_series=None):
     if plt is None:
         raise ImportError(
             "Missing dependency: matplotlib. Please install matplotlib in your environment."
@@ -108,6 +156,17 @@ def _plot_series(steps, series, transitions, output_path, reduction):
     palette = plt.get_cmap("tab10")
 
     ax.plot(steps, series["id"], marker="o", linewidth=2.8, color="black", label="ID")
+
+    if train_series is not None:
+        train_steps, train_losses = train_series
+        ax.plot(
+            train_steps,
+            train_losses,
+            linestyle="--",
+            linewidth=2.2,
+            color="dimgray",
+            label="train loss (wandb)",
+        )
 
     ood_names = [name for name in series if name != "id"]
     for idx, name in enumerate(ood_names):
@@ -167,8 +226,9 @@ def _plot_series(steps, series, transitions, output_path, reduction):
     ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0)
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=220)
+    fig.savefig(output_path, dpi=220, bbox_inches="tight")
     plt.close(fig)
+    print(f"[DONE] Saved plot PNG: {output_path}")
 
 
 def _collect_noise_series(series, include_nonstation=False):
@@ -294,6 +354,18 @@ def main():
     parser.add_argument("--harmful_rel_threshold", type=float, default=0.15)
     parser.add_argument("--harmful_abs_threshold", type=float, default=1e-4)
     parser.add_argument(
+        "--wandb_run",
+        type=str,
+        default=None,
+        help="Optional W&B run URL or path (entity/project/run_id) to overlay train loss from history.",
+    )
+    parser.add_argument(
+        "--wandb_metric",
+        type=str,
+        default="overall_loss",
+        help="W&B history metric to plot as training loss.",
+    )
+    parser.add_argument(
         "--fixed_steps_for_noise_plot",
         type=int,
         nargs="+",
@@ -362,6 +434,13 @@ def main():
     if args.num_eval_examples % batch_size != 0:
         raise ValueError("num_eval_examples must be divisible by batch_size.")
 
+    wandb_train_series = None
+    if args.wandb_run:
+        wandb_train_series = _load_wandb_series(args.wandb_run, metric_name=args.wandb_metric)
+        print(
+            f"[INFO] Loaded W&B train series: {len(wandb_train_series[0])} points from {args.wandb_run}"
+        )
+
     series = {name: [] for name in eval_profile.keys()}
 
     for step in eval_steps:
@@ -421,7 +500,7 @@ def main():
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 
-    _plot_series(eval_steps, series, transitions, png_path, args.reduction)
+    _plot_series(eval_steps, series, transitions, png_path, args.reduction, train_series=wandb_train_series)
 
     if args.fixed_steps_for_noise_plot:
         x_label = "Noise scale (multiplier)" if use_noise_multipliers else "Noise std"

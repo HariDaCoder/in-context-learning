@@ -12,7 +12,14 @@ from pathlib import Path
 from typing import Optional
 
 # Resolve project root regardless of where the script is invoked
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+try:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+except NameError:
+    # Running in Jupyter/Colab where __file__ doesn't exist
+    PROJECT_ROOT = Path(os.getcwd())
+    if PROJECT_ROOT.name == "src":
+        PROJECT_ROOT = PROJECT_ROOT.parent
+
 DEFAULT_TEMPLATE = PROJECT_ROOT / "conf" / "template.yaml"
 CONFIGS_DIR = PROJECT_ROOT / "conf" / "experiments"
 MODELS_DIR = PROJECT_ROOT / "models"
@@ -56,13 +63,20 @@ def run_experiment(config_path, experiment_name):
     print(f"Config: {config_path}")
     print(f"{'='*70}\n")
     
-    cmd = ["python", str(TRAIN_SCRIPT), "--config", str(config_path)]
+    cmd = ["python3.9", str(TRAIN_SCRIPT), "--config", str(config_path)]
     
     try:
-        subprocess.run(cmd, check=True)
+        # Show output in real-time by not capturing stdout/stderr
+        result = subprocess.run(cmd, check=True, text=True)
         print(f"\n✓ SUCCESS: {experiment_name}\n")
+        return True
     except subprocess.CalledProcessError as e:
-        print(f"\n✗ FAILED: {experiment_name} (Error: {e})\n")
+        print(f"\n✗ FAILED: {experiment_name}")
+        print(f"Exit code: {e.returncode}\n")
+        return False
+    except KeyboardInterrupt:
+        print(f"\n⚠️  INTERRUPTED: {experiment_name}\n")
+        raise
 
 
 def resolve_template_path(template_arg: Optional[str]) -> Path:
@@ -108,6 +122,8 @@ def main():
                        help='Which figure experiments to run: 1, 2, 3, or all')
     parser.add_argument('--template', type=str, default=None,
                         help='Path to template.yaml (optional). If omitted, will try conf/template.yaml and fallbacks.')
+    parser.add_argument('--exp-id', type=int, default=None,
+                        help='Run specific experiment by index (0-based). If omitted, runs all.')
     args = parser.parse_args()
     
     template_path = resolve_template_path(args.template)
@@ -260,8 +276,8 @@ def main():
         print("📉 Building FIGURE 3 experiments...")
         
         noise_configs = [
-            ('bernoulli', [0.3], 'p'),
-            ('gamma', [(4.0, 1.0)], 'k'),
+            ('bernoulli', [0.1, 0.2, 0.3, 0.4], 'p'),
+            ('gamma', [(4.0, 1.0), ()], 'k'),
             ('poisson', [2.0, 3.0], 'lambda'),
             ('t-student', [3.0], 'df'),
         ]
@@ -312,6 +328,14 @@ def main():
     print(f"🚀 Running experiments for: FIGURE {args.figure.upper()}")
     print(f"📊 TOTAL EXPERIMENTS: {len(experiments)}")
     print(f"{'#'*70}\n")
+    
+    # Filter to specific experiment if --exp-id provided
+    if args.exp_id is not None:
+        if args.exp_id < 0 or args.exp_id >= len(experiments):
+            print(f"❌ Invalid --exp-id {args.exp_id}. Valid range: 0-{len(experiments)-1}")
+            return
+        experiments = [experiments[args.exp_id]]
+        print(f"🎯 Running single experiment: {experiments[0]['name']}\n")
     
     for i, exp in enumerate(experiments, 1):
         print(f"[{i}/{len(experiments)}] ", end="")

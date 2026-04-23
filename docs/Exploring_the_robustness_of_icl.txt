@@ -1,0 +1,949 @@
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+EXPLORING THE ROBUSTNESS OF
+IN-CONTEXT LEARNING WITH NOISY LABELS
+Chen Cheng1∗ Xinzhi Yu2∗ Haodong Wen3∗ Jingsong Sun3
+Guanzhang Yue4 Yihao Zhang4 Zeming Wei4†
+1ShanghaiTech University 2Fudan University 3Xi’an Jiaotong University 4Peking University
+ABSTRACT
+Recently, the mysterious In-Context Learning (ICL) ability exhibited by Trans-
+former architectures, especially in large language models (LLMs), has sparked
+significant research interest. However, the resilience of Transformers’ in-context
+learning capabilities in the presence of noisy samples, prevalent in both training
+corpora and prompt demonstrations, remains underexplored. In this paper, in-
+spired by prior research that studies ICL ability using simple function classes, we
+take a closer look at this problem by investigating the robustness of Transform-
+ers against noisy labels. Specifically, we first conduct a thorough evaluation and
+analysis of the robustness of Transformers against noisy labels during in-context
+learning and show that they exhibit notable resilience against diverse types of
+noise in demonstration labels. Furthermore, we delve deeper into this problem
+by exploring whether introducing noise into the training set, akin to a form of
+data augmentation, enhances such robustness during inference, and find that such
+noise can indeed improve the robustness of ICL. Overall, our fruitful analysis and
+findings provide a comprehensive understanding of the resilience of Transformer
+models against label noises during ICL and provide valuable insights into the
+research on Transformers in natural language processing. Our code is available at
+https://github.com/InezYu0928/in-context-learning.
+1 I NTRODUCTION
+In recent years, Large Language Models (LLMs) have achieved significant success across various tasks
+in real-world applications. Transformer (Vaswani et al., 2017), as the typical backbone architecture,
+also emerges an intriguing ability known as In-Context Learning (ICL) (Brown et al., 2020; Dong
+et al., 2023a) that the model can learn a new task with only a few input-output pairs demonstrated
+during inference without modifying any model parameters. This mysterious property of transformers
+has attracted great research interests in understanding this ability, among which one representative
+perspective is investigating ICL through simple function classes (Garg et al., 2023).
+As large language models like Vicuna (Zheng et al., 2023) and Llama2 (Touvron et al., 2023) were
+trained over documents collected in the real world without sufficient supervision, such documents
+might contain noisy information, which could affect the ability of these models during in-context
+inference. Moreover, recent works (Wei et al., 2023c; Pawelczyk et al., 2023) also showed that the
+output of ICL might be significantly manipulated by the label of demonstrations in the prompts,
+uncovering safety concerns about this prompt form. Motivated by these observations, in this work,
+we attempt to characterize and understand such ICL ability of transformers with noisy labels. Noisy
+label learning (Natarajan et al., 2013) has a wide breadth of literature in modern machine learning
+research (Xiao et al., 2015; Wang et al., 2018; Wu et al., 2023), as dataset collection may be costly and
+noisy (Deng et al., 2009). Further discussion on related work can be found in Appendix A. Therefore,
+the noisy label scenario in terms of ICL, is more practical and deserves a good understanding for
+advancing the safety and alignment of large language models, as discussed above.
+∗Equal contribution.
+†Corresponding author: Zeming Wei (weizeming@stu.pku.edu.cn).
+1
+arXiv:2404.18191v2  [cs.CL]  1 May 2024
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+Given the complexity of language distributions and tasks, directly formulating and analyzing ICL’s ro-
+bustness under noisy label conditions is challenging. To address this challenge, a series of work (Garg
+et al., 2023; Bhattamishra et al., 2024) suggest studying transformers’ ICL capability via simple
+function classes. Specifically, they propose to assess the ICL ability of Transformers by learning
+a simple function class in context. Following this research paradigm, our work also investigates
+the noisy label robustness of ICL using simple function classes, offering a more interpretable and
+straightforward framework.
+In this work, we conduct a comprehensive evaluation of the robustness against noisy labels of
+ICL and also explore how label noise that exists in the training phase can affect it. Our findings
+suggest that transformers are indeed fairly robust to label noises in the in-context demonstrations,
+and it’s also possible to further enhance such robustness by adding noises in the training set as
+data augmentation. Our fruitful and comprehensive experiments provide interesting findings and
+conclusions for understanding the robustness of in-context learning with noisy labels.
+2 P RELIMINARIES
+Following the research paradigm of studying the ICL ability of Transformers through a set of simple
+function classes (Garg et al., 2023; Bhattamishra et al., 2024), we explore the Transformers’ ICL
+robustness against noisy labels. In this section, we take the noisy linear regression task as an
+example to demonstrate the overall training-inference pipeline, and other function classes evaluated
+can also be similarly formulated. The overall pipeline involves the following two parts.
+Transformer training with in-context demonstrations. In this part, we build a synthetic dataset
+to train a transformer, aiming for it to acquire ICL capability to learn linear regression func-
+tions from in-context demonstrations. Specifically, we consider the class of linear functions
+F = {fw|fw(x) = wT x, w ∈ Rd}, and each training sample in the dataset can be formulated
+as P = ( x1, fw(x1), · · · , xk, fw(xk)), with input samples and function parameter w both drawn
+from an isotropic Gaussian distribution, i.e. xi, w ∼ N (0, Id). For noisy-label learning, Gaussian
+noise ϵi ∼ N (0, σ2
+train) is added to the demonstrations, resulting in fw(xi) + ϵi.
+Transformer inference with in-context demonstrations.After training the transformer modelMθ(·)
+with parameters θ, ICL inference is conducted by prompting P = (x1, fw(x1), · · · , xk, fw(xk), xq),
+where (xi, fw(xi) represent in-context demonstrations and xq is the query input. For in-context
+inference, a ground-truth function fw from F is randomly sampled, with w and xi both drawn from
+N (0, Id), resulting in fw(x) = wT x. In the noisy-linear regression, noise ϵi ∼ N (0, σ2
+test) is added
+independently to each demonstration fw(xi) + ϵi. However, during evaluation, the ground truth of
+the query xq is kept as wT xq without adding noise.
+3 C OMPREHENSIVE EVALUATION OF NOISY ICL INFERENCE
+In this section, we focus on the inference stage of ICL with various settings. In our main evaluation,
+we examine the robustness of the Transformer model with different distributions of label noises
+in the linear regression task, and conduct further investigations on the non-i.i.d. noise setting (in
+Appendix C), different function complexity (in Appendix D), and different input dimensions
+(in Appendix E). Following (Garg et al., 2023), we construct a dataset with 10,000 prompts, each
+containing 100 demonstrations with default dimension d = 20, and train GPT-2 models (Radford
+et al., 2019) consisting of 12 layers and 8 attention heads and a 256-dimensional embedding for
+evaluation. All results are averaged over 5 independent experiments.
+Noise Distributions. In our experiments, we consider the following label noise distributions: (1)
+Gaussian distribution: wT xi + ϵi, where ϵi ∼ N (0, σ2); (2) Uniform distribution: wT xi + ϵi, where
+ϵi ∼ U (−
+√
+3σ,
+√
+3σ); (3) Exponential distribution: wT xi + ϵi, where ϵi ∼ Exp( 1
+σ ); (4) Poisson
+distribution: wT xi + ϵi, where ϵi ∼ P (σ2); (5) Multiplicative distribution: wT xi × (1 + ϵi), where
+ϵi ∼ N (0, σ2). (6) Salt&Pepper distribution: wT xi + ϵi, where ϵi is either salt value or pepper value
+with probabilities p/2 each, and σ =
+√
+2p.
+Robustness evaluation metrics. To evaluate the robustness of the transformer against label noises,
+following (Garg et al., 2023) we compare its performance with a few simple baselines including (a)
+2
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+the least squares estimator, which computes the minimum-norm linear fit to the in-context examples
+(xi, yi); (b) K-Nearest Neighbors, involving the averaging of yi values for the n nearest neighbors of
+xquery; (c) the average of the values yixi to estimate w and calculate the inner product of this estimate
+with xquery. Note that the least squares offer an optimal estimator for this problem and a lower bound
+for the best achievable error, while the other two baselines offer a consistent, computationally simpler
+estimator. Furthermore, we consider the normalized squared error
+LP = (M (P ) − wT xquery )2
+d ,
+where P is the input prompt and M is the trained model. Considering the presence of label noise, we
+define the model achieves the satisfactory accuracy if LP ≤ 0.5, thereby establishing a threshold for
+the noise level under which the Transformer model maintains robustness and providing a criterion to
+compare between ICL and the simple baselines.
+Robustness analysis. As discussed above, we employ the loss functions introduced above to evaluate
+the trained Transformer models and the baselines across different noise types and varying levels of
+label noise. We plot the comparison of the transformer and other baselines under these settings in
+Figure 4 in Appendix B, including σtest ∈ { 0.2, 0.5, 1.0}, and also compare the robustness of the
+Transformers against different noise magnitude σtest of a specific noise type in Figure 1.
+(a) Gaussian (b) Uniform (c) Exponential
+(d) Poisson (e) Multiplicative (f) S&P
+Figure 1: Robustness Comparison under Different Noise Types and magnitudes. Each figure rep-
+resents a noise and each line represents a σtest. The X-axis represents the number of in-context
+examples.
+From these results, we can directly draw the following observations:
+i) Inadequate in-context examples. When the number of in-context examples falls below the input
+dimension (d = 20), the model’s loss closely aligns with that of the least squares estimator.
+ii) Near input-dimension number of examples. When the number of in-context examples nears
+the input dimension (d = 20), significant errors arise in the least-square estimator, whereas the ICL
+model’s accuracy continues to improve.
+iii) Sufficient in-context examples. Once the number of in-context examples exceeds d = 20, the
+ICL model’s performance rapidly and significantly improves.
+Furthermore, we can find that under symmetric noises (Gaussian, Uniform, Exponential, Poisson),
+transformers exhibit better performance in comparison to other baselines. Besides, when confronted
+with higher noise levels, the ICL model exhibits a challenge in ignoring label noise. This observation
+aligns with intuition, as inference in noisy linear regression mirrors the least squares solution
+with appropriately structured L2 regularization. Additionally, upon introducing Multiplicative
+and Salt&Pepper noise, we observe that the transformer model does not perform well (worse
+3
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+than baselines and zero estimators). This discrepancy suggests that transformer models might not
+generalize well to noise that deviates significantly from the symmetric or discrete distributions
+typically encountered in natural data.
+Finally, we also find that there may exist a distinct threshold for each noise type, beyond which the
+transformer model’s performance cannot outperform baselines. Once the noise level, denoted as
+σ, surpasses this threshold, the noise perceptibly impacts the model, rendering it non-negligible in
+its influence on performance. Through extensive evaluations, we can estimate such thresholds for
+different noise distributions and summarize them in Table 1.
+Table 1: Estimated robustness threshold of label noise σ to perform comparably with the case of no
+noise.
+Distribution Gaussian Uniform Exponential Poisson Multiplicative S&P
+Threshold σ 0.45 1.10 0.39 0.43 0.23 0.22
+4 I NFLUENCE OF TRAINING WITH NOISY LABELS ON ROBUSTNESS
+In this section, we further explore how adding label noises in the training dataset influences the
+robustness of the Transformer during in-context inference. Since the real-world training corpus for
+large-scale Transformers (e.g., LLMs) may be noisy and lack supervision, we attempt to seek insights
+into whether such noises may be unexpectedly helpful in improving the robustness of the model
+during ICL by this evaluation framework. Intriguingly, we find that adding such noises to the training
+labels can indeed enhance the desired robustness.
+Experiment Set-up. To construct a noisy training set, instead of vanilla demonstrations{xi, fw(xi)},
+we add Gaussian noises to the labels as {xi, fw(xi) + ϵi} with ϵi ∼ N (0, σ2). We still adopt the
+GPT-2 (Radford et al., 2019) model architecture and compare σtrain ∈ {0.2, 0.4, 0.6, 0.8, 1}. In this
+experiment, we further take the model size into consideration and compare the following three model
+sizes: standard (8 heads, 12 layers, embedding size = 256, which is adopted in the experiments
+above), small (4 heads, 6 layers, embedding size = 128), and tiny (2 heads, 3 layers, embedding size
+= 64).
+0 10 20 30 40 50 60 70
+Step/k
+2.5
+5.0
+7.5
+10.0
+12.5
+15.0
+17.5
+20.0Loss
+train = 0.0
+train = 0.2
+train = 0.4
+train = 0.6
+train = 0.8
+train = 1.0
+Figure 2: The training loss for a standard-sized transformer with Gaussian noise of σtrain ∈
+{0.0, 0.2, 0.4, 0.6, 0.8, 1.0}.
+Training convergence with noisy labels. For each σ, we train the model with corresponding label
+noise distribution and plot the training loss curve in Figure 2 with each line representing a model.
+Similar to (Garg et al., 2023), we used curriculum learning during training where we started from a low-
+dimensional space and gradually increased to 20. Note that the model associated with σtrain = 0.0
+represents the case of no-label noise, which is exactly the standard training setting. By inspecting the
+convergence situation, it is clear that for small label noises (σ < 0.6), the training is well converged
+and the final loss is very close to the standard training. Even in the case of large noise variance
+4
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+(σ = 0 .6, 0.8, 1), the training can still converge to a certain extent. The main difference between
+training with noise and without noise is at the beginning where the loss remains high even with the
+adoption of curriculum learning. However, curriculum learning still works well since all the models
+nearly converge at step 30k.
+Robustness analysis with noisy label training. We further conduct in-context inference with
+different inference Gaussian noise σtest ∈ {0.2, 0.4, 0.6, 0.8, 1} (the same as what we used to train
+our models). Still, we focus on the class of noisy linear functions F = {fw|fw(x) = wT x + ϵ, w ∈
+Rd}, in d = 20 dimensions. To ensure that the experimental results are convincing and reproducible,
+we repeated the experiment 1280 times and took an average value to plot the figure. Moreover, for
+the sake of fairness, we use the same set of prompts for different models in the same setting during
+inference. The results are Figure 3.
+0 10 20 30
+0.0
+0.5
+1.0MSE
+0 10 20 30
+0.0
+0.5
+1.0
+0 10 20 30
+0.0
+0.5
+1.0
+0 10 20 30
+0.0
+0.5
+1.0
+0 10 20 30
+0.0
+0.5
+1.0
+0 10 20 30
+0.0
+0.5
+1.0
+0 10 20 30
+0.0
+0.5
+1.0MSE
+0 10 20 30
+0.0
+0.5
+1.0
+0 10 20 30
+0.0
+0.5
+1.0
+0 10 20 30
+0.0
+0.5
+1.0
+0 10 20 30
+0.0
+0.5
+1.0
+0 10 20 30
+0.0
+0.5
+1.0
+0 10 20 30
+In-context Examples
+0.0
+0.5
+1.0MSE
+0 10 20 30
+In-context Examples
+0.0
+0.5
+1.0
+0 10 20 30
+In-context Examples
+0.0
+0.5
+1.0
+0 10 20 30
+In-context Examples
+0.0
+0.5
+1.0
+0 10 20 30
+In-context Examples
+0.0
+0.5
+1.0
+0 10 20 30
+In-context Examples
+0.0
+0.5
+1.0
+test = 0.0
+ test = 0.2
+ test = 0.4
+ test = 0.6
+ test = 0.8
+ test = 1.0
+standardsmalltiny
+train = 0.0
+ train = 0.2
+ train = 0.4
+ train = 0.6
+ train = 0.8
+ train = 1.0
+ OLS
+Figure 3: Effects of Gaussian Noise Magnitude and Model Size on Performance.
+Robustness improved with training label noises Intriguingly, we find that adding label noises in the
+training dataset can indeed improve the robustness of Transformers during ICL inference. Specifically,
+taking the case of standard model size as an example (the first row), though the performance of
+different models with small test noise σtest < 0.5 is small, when the test noise increases σtest > 0.5,
+the models trained with noises (red lines) outperforms the models trained without noise and with small
+noise (σtrain < 0.2, blue lines) significantly. Similar phenomena are also observed in smaller model
+sizes, though the improvement of robustness exhibited in large test noises is relatively decreased.
+Besides, we can also observe that for smaller test noises and the natural case ( σtest = 0 ), the
+performance of models trained with large training noises is similar to the vanilla cases for larger
+model sizes (standard and small), but decreases notably for tiny model size, showing the importance
+on the model capacity in learning with noisy labels. The conclusion is consistent with training with
+LLMs, where training with noisy corpus can still help the model generalize well and be robust against
+noisy labels during ICL (Min et al., 2022) given the large size of the model.
+5 C ONCLUSION
+In this paper, we present a comprehensive study on the robustness of Transformers’ in-context learning
+ability against label noises. First, we conduct extensive experiments covering different noise types,
+magnitudes, function complexities, and input dimensions to show that Transformers retain their ICL
+efficiency against various label noises, along with sufficient analysis and discussions. Furthermore, we
+discover that introducing similar noises into the training set enables good convergence and potentially
+enhances the robustness of transformer models. Our findings contribute to a deeper understanding of
+Transformers’ ICL adaptability to label noise and provide new insights into ICL research in real-world
+models.
+5
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+ACKNOWLEDGEMENT
+This work was sponsored by the Beijing Natural Science Foundation’s Undergraduate Initiating
+Research Program (Grant No. QY23041) and the National Natural Science Foundation of China
+(Grant No. 62172019).
+REFERENCES
+Ekin Akyürek, Dale Schuurmans, Jacob Andreas, Tengyu Ma, and Denny Zhou. What learning algorithm is
+in-context learning? investigations with linear models, 2023. 9
+Anish Athalye, Nicholas Carlini, and David Wagner. Obfuscated gradients give a false sense of security:
+Circumventing defenses to adversarial examples. In ICML, 2018. 9
+Yu Bai, Fan Chen, Huan Wang, Caiming Xiong, and Song Mei. Transformers as statisticians: Provable in-context
+learning with in-context algorithm selection, 2023. 9
+Satwik Bhattamishra, Arkil Patel, Phil Blunsom, and Varun Kanade. Understanding in-context learning in
+transformers and LLMs by learning to learn discrete functions. In ICLR, 2024. 2, 9
+Rishi Bommasani et al. On the opportunities and risks of foundation models, 2022. 9
+Tom Brown et al. Language models are few-shot learners, 2020. 1, 9
+Nicholas Carlini and David Wagner. Adversarial examples are not easily detected: Bypassing ten detection
+methods, 2017a. 9
+Nicholas Carlini and David Wagner. Towards evaluating the robustness of neural networks, 2017b. 9
+Canyu Chen and Kai Shu. Combating misinformation in the age of llms: Opportunities and challenges. arXiv
+preprint arXiv:2311.05656, 2023. 9
+Huanran Chen, Yichi Zhang, Yinpeng Dong, and Jun Zhu. Rethinking model ensemble in transfer-based
+adversarial attacks. arXiv preprint arXiv:2303.09105, 2023. 9
+Filipe R. Cordeiro and Gustavo Carneiro. A survey on deep learning with noisy labels: How to train your model
+when you cannot trust on the annotations?, 2020. 9
+Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale hierarchical
+image database. In 2009 IEEE Conference on Computer Vision and Pattern Recognition , 2009. 1, 9
+Qingxiu Dong, Lei Li, Damai Dai, Ce Zheng, Zhiyong Wu, Baobao Chang, Xu Sun, Jingjing Xu, Lei Li, and
+Zhifang Sui. A survey on in-context learning, 2023a. 1, 9
+Yinpeng Dong, Huanran Chen, Jiawei Chen, Zhengwei Fang, Xiao Yang, Yichi Zhang, Yu Tian, Hang Su, and
+Jun Zhu. How robust is google’s bard to adversarial image attacks? arXiv preprint arXiv:2309.11751, 2023b.
+9
+Shivam Garg, Dimitris Tsipras, Percy Liang, and Gregory Valiant. What can transformers learn in-context? a
+case study of simple function classes, 2023. 1, 2, 4, 9
+Siddhant Garg, Goutham Ramakrishnan, and Varun Thumbe. Towards robustness to label noise in text classifica-
+tion via noise modeling. In CIKM. ACM, October 2021. 9
+Ian J Goodfellow, Jonathon Shlens, and Christian Szegedy. Explaining and harnessing adversarial examples.
+arXiv preprint arXiv:1412.6572, 2014. 9
+Sheng Guo, Weilin Huang, Haozhi Zhang, Chenfan Zhuang, Dengke Dong, Matthew R. Scott, and Dinglong
+Huang. Curriculumnet: Weakly supervised learning from large-scale web images, 2018. 9
+Sheikh Rabiul Islam, William Eberle, Sheikh Khaled Ghafoor, and Mohiuddin Ahmed. Explainable artificial
+intelligence approaches: A survey, 2021. 10
+Neel Jain, Avi Schwarzschild, Yuxin Wen, Gowthami Somepalli, John Kirchenbauer, Ping yeh Chiang, Micah
+Goldblum, Aniruddha Saha, Jonas Geiping, and Tom Goldstein. Baseline defenses for adversarial attacks
+against aligned language models, 2023. 9
+6
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+Lu Jiang, Zhengyuan Zhou, Thomas Leung, Li-Jia Li, and Li Fei-Fei. Mentornet: Learning data-driven
+curriculum for very deep neural networks on corrupted labels. In International conference on machine
+learning, pages 2304–2313. PMLR, 2018. 9
+Ang Li, Yifei Wang, Yiwen Guo, and Yisen Wang. Adversarial examples are not real features.arXiv preprint
+arXiv:2310.18936, 2023. 10
+Haoyang Liu, Maheep Chaudhary, and Haohan Wang. Towards trustworthy and aligned machine learning: A
+data-centric survey with causality perspectives. arXiv preprint arXiv:2307.16851, 2023. 9
+Ye Liu, Yaya Cheng, Lianli Gao, Xianglong Liu, Qilong Zhang, and Jingkuan Song. Practical evaluation of
+adversarial robustness via adaptive auto attack, 2022. 9
+Sheng Lu, Irina Bigoulaeva, Rachneet Sachdeva, Harish Tayyar Madabushi, and Iryna Gurevych. Are emergent
+abilities in large language models just in-context learning?, 2023. 9
+Aleksander Madry, Aleksandar Makelov, Ludwig Schmidt, Dimitris Tsipras, and Adrian Vladu. Towards deep
+learning models resistant to adversarial attacks. arXiv preprint arXiv:1706.06083, 2017. 9
+Naresh Manwani and Senior Member Ieee P. S. Sastry. Noise tolerance under risk minimization. IEEE
+Transactions on Cybernetics, 43:1146–1151, 2011. 9
+Sewon Min, Xinxi Lyu, Ari Holtzman, Mikel Artetxe, Mike Lewis, Hannaneh Hajishirzi, and Luke Zettle-
+moyer. Rethinking the role of demonstrations: What makes in-context learning work? arXiv preprint
+arXiv:2202.12837, 2022. 5, 9
+Nagarajan Natarajan, Inderjit S Dhillon, Pradeep K Ravikumar, and Ambuj Tewari. Learning with noisy labels.
+Advances in neural information processing systems , 26, 2013. 1
+Giorgio Patrini, Alessandro Rozza, Aditya Menon, Richard Nock, and Lizhen Qu. Making deep neural networks
+robust to label noise: a loss correction approach, 2017. 9
+Martin Pawelczyk, Seth Neel, and Himabindu Lakkaraju. In-context unlearning: Language models as few shot
+unlearners, 2023. 1
+Alec Radford, Jeff Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. Language models are
+unsupervised multitask learners. 2019. 2, 4
+Tilman Räuker, Anson Ho, Stephen Casper, and Dylan Hadfield-Menell. Toward transparent ai: A survey on
+interpreting the inner structures of deep neural networks, 2023. 10
+Hwanjun Song, Minseok Kim, Dongmin Park, Yooju Shin, and Jae-Gil Lee. Learning from noisy labels with
+deep neural networks: A survey. IEEE Transactions on Neural Networks and Learning Systems , 2022. 9
+Hugo Touvron et al. Llama 2: Open foundation and fine-tuned chat models, 2023. 1
+Dimitris Tsipras, Shibani Santurkar, Logan Engstrom, Alexander Turner, and Aleksander Madry. Robustness
+may be at odds with accuracy. arXiv preprint arXiv:1805.12152, 2018. 10
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser,
+and Illia Polosukhin. Attention is all you need, 2017. 1, 9
+Johannes V on Oswald, Eyvind Niklasson, Ettore Randazzo, Joao Sacramento, Alexander Mordvintsev, Andrey
+Zhmoginov, and Max Vladymyrov. Transformers learn in-context by gradient descent. In ICML, 2023. 9
+Jiongxiao Wang, Zichen Liu, Keun Hee Park, Muhao Chen, and Chaowei Xiao. Adversarial demonstration
+attacks on large language models, 2023. 9
+Xin Wang, Jie Ren, Shuyun Lin, Xiangming Zhu, Yisen Wang, and Quanshi Zhang. A unified approach to
+interpreting and boosting adversarial transferability. arXiv preprint arXiv:2010.04055, 2020. 10
+Yifei Wang, Yuyang Wu, Zeming Wei, Stefanie Jegelka, and Yisen Wang. How language models defend
+themselves against jailbreak: Theoretical understanding of self-correction through in-context learning. arXiv
+preprint, 2024. 9
+Yisen Wang, Weiyang Liu, Xingjun Ma, James Bailey, Hongyuan Zha, Le Song, and Shu-Tao Xia. Iterative
+learning with open-set noisy labels. In CVPR, 2018. 1, 9
+Yisen Wang, Xingjun Ma, Zaiyi Chen, Yuan Luo, Jinfeng Yi, and James Bailey. Symmetric cross entropy for
+robust learning with noisy labels. In ICCV, 2019. 9
+7
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+Alexander Wei, Nika Haghtalab, and Jacob Steinhardt. Jailbroken: How does llm safety training fail?, 2023a. 9
+Zeming Wei, Yifei Wang, Yiwen Guo, and Yisen Wang. Cfa: Class-wise calibrated fair adversarial training. In
+CVPR, 2023b. 9
+Zeming Wei, Yifei Wang, and Yisen Wang. Jailbreak and guard aligned language models with only few in-context
+demonstrations. arXiv preprint arXiv:2310.06387, 2023c. 1, 9
+Zeming Wei, Jingyu Zhu, and Yihao Zhang. Sharpness-aware minimization alone can improve adversarial
+robustness. In ICML Workshop on New Frontiers in Adversarial Machine Learning , 2023d. 9
+Noam Wies, Yoav Levine, and Amnon Shashua. The learnability of in-context learning, 2023. 9
+Tingting Wu, Xiao Ding, Minji Tang, Hao Zhang, Bing Qin, and Ting Liu. Noisywikihow: A benchmark for
+learning with real-world noisy labels in natural language processing, 2023. 1
+Tong Xiao, Tian Xia, Yi Yang, Chang Huang, and Xiaogang Wang. Learning from massive noisy labeled data
+for image classification. In Proceedings of the IEEE conference on computer vision and pattern recognition ,
+pages 2691–2699, 2015. 1
+Sang Michael Xie, Aditi Raghunathan, Percy Liang, and Tengyu Ma. An explanation of in-context learning as
+implicit bayesian inference, 2022. 9
+Hongyang Zhang, Yaodong Yu, Jiantao Jiao, Eric Xing, Laurent El Ghaoui, and Michael Jordan. Theoretically
+principled trade-off between robustness and accuracy. In ICML, 2019. 9
+Yihao Zhang and Zeming Wei. Boosting jailbreak attack with momentum. In ICLR 2024 Workshop on Reliable
+and Responsible F oundation Models, 2024. 9
+Yihao Zhang, Hangzhou He, Jingyu Zhu, Huanran Chen, Yifei Wang, and Zeming Wei. On the duality between
+sharpness-aware minimization and adversarial training. arXiv preprint arXiv:2402.15152, 2024a. 9
+Yihao Zhang, Zeming Wei, Jun Sun, and Meng Sun. Towards general conceptual model editing via adversarial
+representation engineering. arXiv preprint, 2024b. 9
+Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan
+Li, Dacheng Li, Eric. P Xing, Hao Zhang, Joseph E. Gonzalez, and Ion Stoica. Judging llm-as-a-judge with
+mt-bench and chatbot arena, 2023. 1
+Dawei Zhu, Michael A. Hedderich, Fangzhou Zhai, David Ifeoluwa Adelani, and Dietrich Klakow. Is bert robust
+to label noise? a study on learning with noisy labels in text classification, 2022. 9
+Andy Zou, Long Phan, Sarah Chen, James Campbell, Phillip Guo, Richard Ren, Alexander Pan, Xuwang Yin,
+Mantas Mazeika, Ann-Kathrin Dombrowski, Shashwat Goel, Nathaniel Li, Michael J. Byun, Zifan Wang,
+Alex Mallen, Steven Basart, Sanmi Koyejo, Dawn Song, Matt Fredrikson, J. Zico Kolter, and Dan Hendrycks.
+Representation engineering: A top-down approach to ai transparency, 2023a. 10
+Andy Zou, Zifan Wang, J. Zico Kolter, and Matt Fredrikson. Universal and transferable adversarial attacks on
+aligned language models, 2023b. 9
+8
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+A A DDITIONAL RELATED WORK
+A.1 U NDERSTANDING IN-CONTEXT LEARNING
+The mysterious ability of in-context learning (Brown et al., 2020; Dong et al., 2023a), which typically
+occurs in attention-based model architectures like transformers (Vaswani et al., 2017), has attracted
+significant research interest in understanding its underlying mechanism and designing better learning
+algorithms (Lu et al., 2023; Min et al., 2022). Without modifying model parameters, these models can
+conduct various downstream tasks with a few input-output pairs as demonstrations included before
+the test input.
+However, given the complexity of natural languages, a popular research paradigm of understanding the
+ICL ability of Transformers is characterizing their learnability through a set of simple function classes,
+like linear functions (Garg et al., 2023) and discrete functions (Bhattamishra et al., 2024), which are
+more interpretable and easier to formulate. There are also other works that investigate such ability
+of ICL through simple functions and propose various understandings, e.g. interprets the inference
+with in-context demonstrations as implicit gradient decent (Akyürek et al., 2023; V on Oswald et al.,
+2023; Bai et al., 2023; Wang et al., 2024). Specifically, they showed that transformers can learn
+the specified task through these demonstrations with implicit optimization in the hidden spaces of
+transformers. Besides, there are also interpretations of ICL through other perspectives, like Bayes
+inference (Xie et al., 2022) and PAC-learnability (Wies et al., 2023).
+A.2 N OISY LABEL LEARNING
+Modern deep learning methods commonly face the presence of noisy labels in the training data,
+since data collection and annotation may be costly and biased (Deng et al., 2009). Such noises
+in labels may be symmetric, asymmetric, and even from the open set that is not contained in the
+training classes (Cordeiro and Carneiro, 2020). To tackle this issue, numerous efforts have been made
+to robustify the training process against such noises. Typical approaches include estimating noise
+transition matrix (Patrini et al., 2017), designing robust loss functions (Manwani and Sastry, 2011;
+Wang et al., 2019), sample weighting (Guo et al., 2018; Wang et al., 2018) and selection (Jiang et al.,
+2018).
+Though broadly explored in this literature, learning with noisy labels is still an open problem in
+modern machine learning research (Song et al., 2022). Moreover, there are also concurrent threads
+toward studying the robustness against label noise for the text modular (Garg et al., 2021; Zhu et al.,
+2022). Despite broad explorations, few works have investigated the robustness of in-context learning
+with noisy labels. Though studying the ICL ability of transformers through noisy linear regression,
+(Garg et al., 2023) only studies the standard Gaussian distribution noise, which is only one specific
+noise type and magnitude in our work. In this paper, we take steps further to systematically investigate
+the robustness of ICL against various label noise settings, including both the train and inference
+phases, and various types and magnitudes of noises.
+A.3 L ANGUAGE MODEL SAFETY AND ALIGNMENT
+With the milestone success of the fast-paced development of large language models (LLMs), concerns
+regarding their potential for harmful generation and malicious usage have emerged (Bommasani et al.,
+2022; Chen and Shu, 2023; Liu et al., 2023; Zhang et al., 2024b), which are typically referred to as
+the jailbreaking issue (Zou et al., 2023b; Wei et al., 2023a; Dong et al., 2023b; Zhang and Wei, 2024).
+Such risks further extend to the in-context learning scenario, as recent work (Wang et al., 2023; Wei
+et al., 2023c) showed, it is possible to manipulate the safety and alignment of language models by
+maliciously inducing noisy labels in the demonstrations. Therefore, it is of significance to study the
+robustness of in-context learning with label noises.
+Moreover, different from defense against conventional adversarial noises (Goodfellow et al., 2014;
+Carlini and Wagner, 2017b; Liu et al., 2022; Chen et al., 2023; Wei et al., 2023d) among which
+adversarial training methods (Madry et al., 2017; Zhang et al., 2019; Wei et al., 2023b; Zhang et al.,
+2024a) that adding adversarial noises in the training loops are shown to be the most effective among
+various defense methods (Carlini and Wagner, 2017a; Athalye et al., 2018), it is recently shown that
+AT may not be an effective defense (Jain et al., 2023) for LLMs. Such difference further underscores
+9
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+the challenge of the interpretability of internal mechanism (Islam et al., 2021; Räuker et al., 2023;
+Zou et al., 2023a) and adversarial examples (Tsipras et al., 2018; Wang et al., 2020; Li et al., 2023) in
+the context of LLMs. In this work, we explore a similar problem: whether adding label noises in the
+training demonstrations can enhance the corresponding robustness during inference.
+B C OMPLETE VISUALIZATIONS FOR MAIN EVALUATION IN SECTION 3
+Gaussian
+Uniform
+Exponential
+Poisson
+Multiplicative
+S&P
+σ = 0.2 σ = 0.5 σ = 1.0
+Figure 4: Robustness Comparison under Different Noise Types and magnitudes. Each figure rep-
+resents a noise and each line represents a σtest. The X-axis represents the number of in-context
+examples.
+C N ON-I.I.D. NOISES
+We further extend our experiments to the non-i.i.d. noises scenario. Specifically, we replace the i.i.d.
+label noises with some outlier demonstrations, which is a particular case of non-i.i.d. noises, and
+analyze how the transformers respond to such non-i.i.d noise in the demonstrations.
+10
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+Experiment set-up. In this experiment, we still focus on the class of noisy linear functions F =
+{fw|fw(x) = wT x + ⊮outlier ∗ ϵ, w ∈ Rd} in d = 20 dimensions, where noises are only injected
+into demonstrations of outliers. Similar to the construction of the noisy demonstrations, we sample
+x1, · · · , xk, xquery from the isotropic Gaussian distribution N (0, Id). Then, we randomly select m
+outliers S = {i1, · · · , im}, and generate i.i.d. Poisson noise {ϵi1 , · · · , ϵim} with noise magnitude
+σ. Subsequently, each yi = wT xi + ⊮i∈S ∗ ϵi is computed. Finally, the prompt P is constructed as
+P = (x1, y1, x2, y2, · · · , xk, yk, xquery ).
+Robustness analysis. We present the results with small multiples in Figure 5. Overall, the transformer
+model shows superior performance than other baselines, which is similar to the results of i.i.d. noises
+presented above and shows its consistent robustness against such noises, which we elaborate on
+below.
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000014/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000013/uni00000011/uni00000014
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000015/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000013/uni00000011/uni00000014
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000017/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000013/uni00000011/uni00000014
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni0000001b/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000013/uni00000011/uni00000014
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000014/uni00000019/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000013/uni00000011/uni00000014
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000014/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000015/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000017/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni0000001b/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000014/uni00000019/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000014/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014/uni00000013
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000015/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014/uni00000013
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000017/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014/uni00000013
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni0000001b/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014/uni00000013
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000014/uni00000019/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014/uni00000013
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000014/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014/uni00000013/uni00000013
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000015/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014/uni00000013/uni00000013
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000017/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014/uni00000013/uni00000013
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni0000001b/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014/uni00000013/uni00000013
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+/uni00000013/uni00000014/uni00000013/uni00000015/uni00000013/uni00000016/uni00000013/uni00000017/uni00000013
+/uni0000004c/uni00000051/uni00000010/uni00000046/uni00000052/uni00000051/uni00000057/uni00000048/uni0000005b/uni00000057/uni00000003/uni00000048/uni0000005b/uni00000044/uni00000050/uni00000053/uni0000004f/uni00000048/uni00000056
+/uni00000013/uni00000011/uni00000013
+/uni00000013/uni00000011/uni00000015
+/uni00000013/uni00000011/uni00000017
+/uni00000013/uni00000011/uni00000019
+/uni00000013/uni00000011/uni0000001b
+/uni00000014/uni00000011/uni00000013
+/uni00000014/uni00000011/uni00000015/uni00000056/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000047/uni00000003/uni00000048/uni00000055/uni00000055/uni00000052/uni00000055
+/uni00000031/uni00000058/uni00000050/uni00000003/uni00000032/uni00000058/uni00000057/uni0000004f/uni0000004c/uni00000048/uni00000055/uni00000056/uni0000001d/uni00000003/uni00000014/uni00000019/uni0000000f/uni00000003/uni00000031/uni00000052/uni0000004c/uni00000056/uni00000048/uni00000003/uni00000030/uni00000044/uni0000004a/uni00000051/uni0000004c/uni00000057/uni00000058/uni00000047/uni00000048/uni0000001d/uni00000003/uni00000014/uni00000013/uni00000013
+/uni00000037/uni00000055/uni00000044/uni00000051/uni00000056/uni00000049/uni00000052/uni00000055/uni00000050/uni00000048/uni00000055
+/uni0000002f/uni00000048/uni00000044/uni00000056/uni00000057/uni00000003/uni00000036/uni00000054/uni00000058/uni00000044/uni00000055/uni00000048/uni00000056
+/uni00000016/uni00000010/uni00000031/uni00000048/uni00000044/uni00000055/uni00000048/uni00000056/uni00000057/uni00000003/uni00000031/uni00000048/uni0000004c/uni0000004a/uni0000004b/uni00000045/uni00000052/uni00000055/uni00000056
+/uni00000024/uni00000059/uni00000048/uni00000055/uni00000044/uni0000004a/uni0000004c/uni00000051/uni0000004a
+Figure 5: In-context learning on prompts with outliers. We evaluate the trained model on prompts with
+outliers in two cases. (1) On the rows, we explored the effect of the number of outliers ({1,2,4,8,16}),
+and (2) on the columns, we explored the effect of the magnitude of outliers ({0.1,1,10,100}). (Error
+averaged over 1280 prompts. 90% confidence intervals over 1000 bootstrap trials.)
+Outliers of different magnitudes and equal quantity. Analyzing different columns in Figure 5
+where the noise of varying magnitudes was introduced to a specified number of prompt outputs, we
+can see that the trained model exhibits greater robustness and stability compared to baseline models,
+particularly as the noise magnitude escalates. Notably, the lower bound of the 0.9 confidence interval
+closely aligns with the actual data when both the noise magnitude and the number of outliers are
+minimal, suggesting that the model maintains high prediction accuracy under these conditions.
+Different quantities of outliers with uniform magnitude. On the other hand, from different rows
+in Figure 5 where the sub-figures involve different numbers of outliers and a consistent magnitude
+within the prompts, we can see an increase in the trained model’s robustness and stability as the
+number of outliers rises.
+D D IFFERENT FUNCTION COMPLEXITIES
+In this part, to evaluate the transformer’s ICL ability in terms of capturing more complex patterns
+within input-output mappings, which may be closer to real-world data, we broaden our exploration
+beyond linear relationships by exploring the task of polynomial regression ranging from degrees
+11
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+of 2 to 5. We compare the transformer’s robustness with both the least-squares method and a 3-NN
+model.
+Experiment Set-up. We continue to adopt the GPT-2 model architecture. To construct a noisy
+training set, instead of vanilla demonstrations {xi, fw(xi)}, we introduce Gaussian noise to the labels
+as {xi, f (n)
+w (xi) + ϵi}, where
+f (n)
+w (xi) =
+nX
+i=1
+wi · xn
+i , (1)
+and ai is sampled from N (0, 1). Here, ϵi ∼ N (0, σ2), and we consider σ ∈ {0.1, 0.2, 0.5}.
+Baselines. We introduce two baseline methods for evaluating the transformer’s ability to model
+polynomial objective functions:
+(1) Least Squares Model (LSM): The Ordinary Least Squares (OLS) regression constructs polynomial
+features up to the specified degree n for each input sample and computes the coefficients w using
+the least squares optimization w = ( X⊺X)−1X⊺y where X is the design matrix consisting of
+polynomial features, y is the vector of labels, and w are the coefficients.
+(2) k-Nearest Neighbors Model (k-NN): We extend the k-Nearest Neighbors algorithm applied in
+the experiments above with polynomial features. For each test point xtest, the predicted output ˆy is
+computed by averaging the labels of the 3 nearest neighbors.
+σtest = 0.0 σtest = 0.1 σtest = 0.2 σtest = 0.5
+Figure 6: noisy ICL performance comparison for models trained with different polynomial degrees.
+Each figure represents an inference noise level σtest, and each line represents a polynomial degree.
+The X-axis represents the number of in-context examples.
+Robustness analysis. We evaluate the Transformer model’s performance on polynomial functions
+with degrees g from 2 to 5 and plot the results in Figure D. We found that while the Transformer
+consistently outperformed baseline models for g = 2 and g = 3, its performance varied as polynomial
+complexity increased. For objectives of g = 4 , the Transformer initially lagged but eventually
+surpassed baselines significantly. However, for objectives ofg = 5, its efficacy declined compared to
+the baselines.
+12
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+This performance disparity can be attributed to several factors. Firstly, the heightened polynomial
+degree engenders an escalated functional complexity, posing formidable challenges to the Trans-
+former’s capacity to model intricate higher-order nonlinear relationships. Secondly, the dearth of
+adequately diverse examples may exacerbate performance degradation, impeding the Transformer’s
+ability to accurately capture and characterize complex functions due to insufficient training data.
+This limitation underscores the Transformer’s susceptibility to "in-context" learning deficits when
+confronted with inadequate exemplars. Lastly, the phenomenon of overfitting may further compound
+performance disparities, particularly evident in the context of degree 5 objectives.
+Notwithstanding these challenges, our comprehensive analysis underscores the Transformer model’s
+commendable performance in addressing polynomial objective functions encountered in routine
+real-world scenarios. Its demonstrated prowess in generalization and robustness, particularly evident
+in outperforming baseline methods for lower-degree polynomials, underscores its potential efficacy
+in diverse applications and its capacity to navigate intricate nonlinear modeling tasks.
+E D IFFERENT INPUT DIMENSIONS
+In this section, we change the input vector dimension d to see how the robustness of the model varies
+with it.
+Experiment Set-up. In this experiment, we still focus on the class of linear functions F =
+{fw|fw(x) = wT x + ϵ, w ∈ Rd}, where d varies in {3, 5, 10}, and ϵ ∼ N (0, σ2). Specifi-
+cally, we train the transformer model with different input dimensions, then we add Gaussian noise
+σ ∈ {0, 0.2, 0.4, 0.6, 0.8, 1} during evaluation to study the influence of different dimensions on the
+robustness of Transformers.
+(a) σtest = 0.0 (b) σtest = 0.2 (c) σtest = 0.4
+(d) σtest = 0.6 (e) σtest = 0.8 (f) σtest = 1.0
+Figure 7: ICL performance comparison for models with different input dimensions. Each figure
+represents an inference noise level σtest, and each line represents a model. The X-axis represents the
+number of in-context examples.
+Robustness Analysis. The experiment results are shown in Figure 7, where we can see the larger the
+input dimension, the worse the performance of the model in in-context learning. The performance
+difference between the cases of d = 3 and d = 5 is relatively small, while the model performance
+decreases significantly when the model d = 10.
+This may be because when the dimension increases, the domain of the function class to be learned
+expands greatly, which exceeds the model capacity, making the training much harder. Meanwhile,
+in the ICL process, the function to be learned itself becomes more complex due to the rise in the
+dimension of the input examples, so the model with higher dimensions learns poorly with the same
+number of examples.
+13
+
+Published at ICLR 2024 Workshop on Reliable and Responsible Foundation Models
+F R EVISITING INPUT DIMENSIONS WITH NOISY LABEL TRAINING
+We also revisit the impact of the input dimensions on the robustness in the case of noisy label training.
+The overall experimental setup of this experiment is similar to that of section E, but it is worth
+noting that here we add Gaussian noise σ ∈ { 0, 0.2, 0.4, 0.6, 0.8, 1} during the training process in
+different input dimensions, and test the model with the same training noise in different dimensions
+in different test noise levels. The results are shown in Figure 8, where we can still observe the
+degradation of model performance with increasing dimensions in different training noises. Intuitively,
+we believe that the change rule of model performance with dimension in the case of training noise is
+not fundamentally different from that in the case of no training noise, and in both cases, the increase
+of dimension will make pre-training and ICL more difficult, which will result in the degradation of
+performance.
+(a) σtest = 0.0 (b) σtest = 0.2 (c) σtest = 0.4
+(d) σtest = 0.6 (e) σtest = 0.8 (f) σtest = 1.0
+Figure 8: (a-h) noisy ICL performance comparison for models trained with different dimensions.
+Each figure represents an inference noise level σtest, and each line represents a model trained with
+the same noise σ = 0 .6 and different input dimension d ∈ { 3, 5, 10}. The X-axis represents the
+number of in-context examples.
+14

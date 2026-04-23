@@ -71,6 +71,7 @@
     - `python src/plot_benign_harmful_dynamics.py --run_path <RUN_PATH> --ood_noise_scales $scales --use_absolute_noise_std --step_stride 5000 --num_eval_examples 256 --reduction last --prefix noise_0_10_100`
 
 4. Cat theo 3 moc step (x=noise, y=loss) de thay nguong nhanh:
+  - Luu y: 3 moc nay la 3 checkpoint theo training step; noise van la 100 muc (bien `$scales` o buoc 3).
   - `python src/plot_benign_harmful_dynamics.py --run_path <RUN_PATH> --ood_noise_scales $scales --use_absolute_noise_std --min_step 20000 --max_step 100000 --step_stride 5000 --fixed_steps_for_noise_plot 20000 60000 100000 --num_eval_examples 256 --reduction last --prefix fixed_step_noise_0_10_100`
 
 5. Neu muon bo nhieu checkpoint hon luc scan dau:

@@ -1,0 +1,3045 @@
+Understanding Generalization in Transformers: Error Bounds and Training
+Dynamics Under Benign and Harmful Overfitting
+Yingying Zhang 1 Zhenyu Wu 2 Jian Li 2 Yong Liu3
+Abstract
+Transformers serve as the foundational archi-
+tecture for many successful large-scale models,
+demonstrating the ability to overfit the training
+data while maintaining strong generalization on
+unseen data, a phenomenon known as benign over-
+fitting. However, research on how the training dy-
+namics influence error bounds within the context
+of benign overfitting has been limited. This paper
+addresses this gap by developing a generalization
+theory for a two-layer transformer with labeled
+flip noise. Specifically, we present generalization
+error bounds for both benign and harmful overfit-
+ting under varying signal-to-noise ratios (SNR),
+where the training dynamics are categorized into
+three distinct stages, each with its corresponding
+error bounds. Additionally, we conduct extensive
+experiments to identify key factors that influence
+test errors in transformers. Our experimental re-
+sults align closely with the theoretical predictions,
+validating our findings.
+1. Introduction
+In recent years, the phenomenon of benign overfitting
+(Bartlett et al., 2020) has provided new insights into the
+over-parameterization of deep neural networks. Tradition-
+ally, it was believed that overfitting is more likely when there
+are more model parameters than training samples, which
+typically leads to a decrease in the model’s generalization
+ability on new data. However, modern deep neural networks,
+despite having numerous parameters, can generalize well,
+fitting well on training data while maintaining low test er-
+ror levels. This seemingly contradictory phenomenon has
+spurred researchers to explore how these models can avoid
+the pitfalls of overfitting. Despite the fact that deep learning
+models often have more parameters than training samples
+1Zhongtai Securities Institute for Financial Studies, Shandong
+University 2School of Artificial Intelligence, Beijing Normal Uni-
+versity 3Gaoling School of Artificial Intelligence, Renmin Univer-
+sity of China. Correspondence to: Jian Li <jli@bnu.edu.cn>.
+and overfit the training data, they can still make accurate
+predictions on new test data (Zhang et al., 2017; Neyshabur
+et al., 2018) . This phenomenon, known as benign over-
+fitting (Bartlett et al., 2020), has altered our traditional un-
+derstanding of statistical learning and garnered significant
+attention from both the statistical and machine learning com-
+munities (Belkin et al., 2018; 2019; 2020; Neyshabur et al.,
+2018; Hastie et al., 2020). This finding has prompted re-
+searchers to delve into the potential mechanisms by which
+these models avoid overfitting.
+Our contributions. In this work, we study the training
+dynamics, convergence, and generalization for a two-layer
+transformer with labeled-flipping noise. Our contributions
+are summarized as bellow:
+• We develop the generalization theory of a two-layer
+transformer, a linear layer behind the attention layer.
+Under different SNR conditions, we analyze the gen-
+eralization dynamics benign overfitting and harmful
+overfitting.
+• The training dynamics of benign overfitting are devided
+into three distinct stages: initialization, signal learn-
+ing, and convergence, while that of harmful overffiting
+are divided into initialization, noise learning, and di-
+vergence. We provide the exact generalization error
+bounds for each stage.
+• We take label-flipping noise into consideration, and
+remove the orthogonal assumption between the signal
+patch and the noise patch.
+• Our research directly starts from the test loss level,
+separately calculating the specific test losses for each
+training phase, making the loss calculation for each
+phase more precise and reasonable.
+• We conduct extensive experiments to identify key fac-
+tors that affact test errors in transformers.
+2. Related Work
+The traditional theory of benign overfitting The tradi-
+tional theory of benign overfitting has obtained a series of
+1
+arXiv:2502.12508v1  [cs.LG]  18 Feb 2025
+
+Understanding Generalization in Transformers
+research results aimed at understanding this phenomenon in
+linear, kernel, and random feature models. (Bartlett et al.,
+2020) set risk bounds for the minimum norm interpolator,
+stressing overparameterization. (Zou et al., 2021) provided
+an excess risk bound for constant stepsize SGD. (Liao et al.,
+2021) extended the analysis to random Fourier feature re-
+gression with fixed ratio sample size, data dimension, and
+number of random features. (Adlam et al., 2021) incorpo-
+rated bias terms into the model. (Tsigler and Bartlett, 2022)
+extended findings to ridge regression and determined opti-
+mal regularization. (Mallinar et al., 2024) found tempered
+overfitting in certain kernels. (Meng et al., 2024) extended
+this to the “multiple random feature model” and discovered
+multiple descent.
+Benign overfitting in transformer Benign overfitting in
+transformers has attracted significant attention in the re-
+search field. Some studies utilize the feature learning frame-
+work to explore this phenomenon within transformer ar-
+chitectures. (Li et al., 2024a) delved into symbolic gra-
+dient descent in two layer transformers, but the research
+was only concerned with harmful overfitting. (Jiang et al.,
+2024) explored the training process of visual transformers.
+Their work uncovered the training dynamics and clarified
+the difference between benign and harmful overfitting. Ad-
+ditionally, there has been new theoretical research on benign
+overfitting.(Jelassi et al., 2022; Tarzanagh et al., 2024; Tian
+et al., 2023) have focused their studies on the training dy-
+namics of transformers. Analyzing these dynamics helps
+to accurately describe the optimization process, providing
+valuable insights into how the model converges and general-
+izes. (Jin et al., 2024) carried out a theoretical analysis of a
+Transformer for MoR context learning.(Huang et al., 2023)
+explored the training of single layer transformers. (Li et al.,
+2024b) examined transformers with nonlinear self-attention.
+(Frei and Vardi, 2024) investigated the performance of linear
+Transformers in random linear classification tasks and found
+that benign overfitting can occur under certain conditions.
+3. Problem Setup
+In this section, we denote the data generation model, two-
+layer transformer model, and the gradient descent-based
+training algorithm.
+Notions. We define two sequences {an} and {bn}, which
+have the following relationship. We say an = O(bn) and
+bn = Ω(an)if there exist |an| ≤ c1|bn| for some positive
+constant c1. At the same time, we define an = Θ( bn) if
+an = O(bn) and an = Ω(bn) hold.
+Definition 3.1 (Data Generation Model). Let µ+, µ− ∈ Rd
+be fixed vectors which represent the signals contained in
+each data point (X, y), where ∥µ+∥2 = ∥µ−∥2 = ∥µ∥2
+and ⟨µ+, µ−⟩ = 0. Then we define each data point (X, y)
+with the input features X = ( x1, x2)T ∈ R2d, and y ∈
+{±1} is generated from the following model:
+• The true data label ˆy ∈ {± 1} is generated as a
+Rademacher random variable. The variable satisfies
+P[ˆy = 1] = P[ˆy = −1] = 1
+2. The observed label y is
+subsequently generated by flipping ˆy with a probability
+α, where α satisfies the condition α ∈ [0, 1/2). i.e.
+P[y = ˆy] = 1 − α and P[y = −ˆy] = α.
+• We set x1= y · µ, which represents the signal. Note
+that, when y = 1 , x1 is set to µ+, and x1 is set to
+µ− when y = −1, where µ+ and µ− both represent
+signals.
+• We set x2=ξ, which represents noise and satisfies ξ ∼
+N (0, σ2
+pI d).
+We consider each data point as a vector of two tokens,
+X = ( x1, x2)T ∈ R2d. The first token, x1, represents
+the component of the signal that is intrinsically linked to
+the training data label and the signals µ+ and µ−, while
+the second token, x2, serves as noise and is irrelevant to
+both the label and the signal. Building on Definition 3.1
+from (Jiang et al., 2024), we further refine the data distribu-
+tion to enhance its practical applicability. Specifically, we
+introduce label-flipping noise to the true label ˆy and relax
+the orthogonality condition between the signal vector µ and
+the noise vectors ξ (for comparison, see Definition 3.1 in
+(Jiang et al., 2024)). Unlike the original approach, our data
+distribution is not restricted to image data in the context of
+vision transformers (ViT), and thus it is applicable to all
+transformer models.
+Signal-to-Noise Ratio (SNR): From (Cao et al., 2022),
+when the dimension d is large, the norm of the noise vector
+satisfies ∥ξ∥2 ≈ σp
+√
+d based on standard concentration
+bounds. Therefore, the signal-to-noise ratio (SNR) can be
+expressed as SNR = ∥µ∥2
+σp
+√
+d, which is approximately equal
+to ∥µ∥2
+∥ξ∥2
+. Hence, we use the expression SNR = ∥µ∥2
+σp
+√
+d to
+represent the signal-to-noise ratio.
+Two-layer Transformers: We denote a two-layer trans-
+former model. Specifically, the first layer is a self-attention
+layer with a softmax activations, and the second layer is a
+linear layer, where S represents the softmax function. The
+two-layer transformer model is defined as:
+f(X, υ) = υT XT S(XWQWKXT )XWV .
+The parameters of the linear layer is denoted as υ ∈ Rmv.
+Note that, the linear layer is fixed in (Jiang et al., 2024),
+while in this paper υ is learnable. The parameters of
+the attention layer are defined as WQ, WK, WV,j , where
+WQ, WK ∈ Rmk×2d and WV,j ∈ Rmv×d for j ∈ {±1},
+which represents the query matrix, the key matrix, and the
+2
+
+Understanding Generalization in Transformers
+value matrix respectively. We use θ to represent all the
+weights of the attention in the model, which is defined as
+θ = ( WQ, WK, WV,j ). We overwrite the model in spe-
+cific form for j ∈ {±1}:
+f(θ, X, υ) = 1
+mv
+X
+r∈[mv]
+
+υT x1(S11 + S21)WV j,r+
+υT x2(S12 + S22)WV j,r
+
+.
+(1)
+In the above formula, we divide the output of the softmax
+function into four types of vectors, which are the softmax
+outputs of the pairwise inner products of the query signal,
+query noise, key signal, and key noise. Specifically, signal-
+to-signal output S11, signal-to-noise output S12, noise-to-
+signal output S21, and noise-to-noise output S22 have been
+defined in the appendix. For example, signal-to-signal out-
+put S11 can be written as:
+S11 = Softmax(⟨q(t)
+± , k(t)
+± ⟩)
+=
+( exp(⟨q+,k+⟩)
+exp(⟨q+,k+⟩)+exp(⟨q+,kξ,i⟩) for i ∈ [S+],
+exp(⟨q−,k−⟩)
+exp(⟨q−,k−⟩)+exp(⟨q−,kξ,i⟩) for i ∈ [S−].
+S+ is the set of i in [N] with yi = 1 and S− is the set of
+i in [N] with yi = −1. Note that, q+, k+, q−, k−, kξ,i are
+related to the query with +1 label, the key with +1 label,
+the query with −1 label, the key with −1 label, and the key
+with noise, respectively.
+Training Algorithm: We use a training dataset gener-
+ated from the distribution D in Definition 3.1 called S :=
+{(Xi, yi)}N
+i=1, where i is the number of samples in the
+training data. Our transformer model is trained through the
+minimization of the empirical cross-entropy loss function.
+LS(θ) = 1
+N
+NX
+i=1
+ℓ(yif(θ, X, υ)),
+where ℓ(z) = log(1 + exp(−z)). We also defined test loss
+LD(θ) := E(X,y)∼Dℓ(yf (θ, X, υ)).
+We train the transformer model starting from random Gaus-
+sian initialization WQ, WK ∼ N (0, σ2
+k), and WV is sam-
+pled from N (0, σ2
+v) at initialization. We use GD optimiza-
+tion to minimize training lossLS(θ), and have the following
+update rules:
+W(t+1)
+V = W(t)
+V − η
+
+∇WV LS(W(t))
+
+,
+W(t+1)
+Q = W(t)
+Q − η
+
+∇WQ LS(W(t))
+
+,
+W(t+1)
+K = W(t)
+K − η
+
+∇WK LS(W(t))
+
+,
+We write the detailed gradient formulas and update rules in
+Appendix D.
+4. Main Results
+In this section, we present our main theoretical findings.
+These finds are based on several key conditions: the dimen-
+sionality d, the sample size N, the variances of the Gaussian
+initialization σ2
+h and σ2
+V , the weights of the linear layer υ,
+the learning rate η, and the noise rate p. Collectively, these
+factors determine the convergence and generalization capa-
+bilities of the label-flipping transformer model. The specific
+conditions are as follows.
+Assumption 4.1. Assume that there exists a sufficiently
+small failure probability δ > 0, a large constant C, and a
+certain training loss ϵ > 0 such that the following hold:
+1. The dimension d satisfies
+d ≥
+
+
+
+SNR4N 4ϵ−4, if ∥µ∥ ≥ σp
+√
+d,
+SNR−4N 4ϵ−4, if ∥µ∥ < σ p
+√
+d.
+2. The training sample size N satisfies N ≥ C ·
+polylog(d).
+3. The noise rate α satisfies α ∈ [0, 1/2).
+4. The linear layer weights satisfy ∥υ∥2 = Θ(1).
+5. The learning rate η satisfies:
+η ≤ min
+
+σ2
+pd, ∥µ∥2
+2
+	
+N 2ϵ−2.
+6. The standard deviation of Gaussian initialization σv
+satisfies:
+σv ≤
+
+
+
+σp
+√
+dϵ
+∥υ∥N , if ∥µ∥ ≥ σp
+√
+d,
+∥µ∥ϵ
+∥υ∥N , if ∥µ∥ < σ p
+√
+d.
+7. The variance of Gaussian initialization σ2
+k satisfies:
+σ2
+k ≤ min
+
+σ2
+pd, ∥µ∥2
+2
+	
+N 2ϵ−2.
+The first two assumptions in Assumption 4.1 are to ensure
+that the learning model is in the over-parameterized setting.
+The assumption 3 is to ensure that we do not add too much
+noise to avoid seriously affecting the learning results of
+the transformer. The assumption 4 is intended to simplify
+the calculation. The parameter σv bounded setting in the
+assumption 6 is used to study the effect on error under
+benign overfitting conditions. The assumptions 5 and 7 on
+η and σ2
+k are to ensure that gradient descent can effectively
+minimize the training loss.
+Theorem 4.2 (Benign overfitting in transformers). When
+N · SNR2 = Ω(1), for any ϵ > 0, under Assumption 4.1,
+with probability at least 1 − δ:
+3
+
+Understanding Generalization in Transformers
+• (Phase 1: Initialization ) There exists T1 =
+140N
+ηd4(N ∥µ∥2
+2−1202C2pσ2pd)∥υ∥2
+2
+, and for t ∈ (0, T1], the
+test error is: LD(W(t)) ≤ α + O(1).
+• (Phase 2: Signal learning ) There exists T2 =
+Θ
+
+1
+η∥µ∥2
+2∥υ∥2
+2
+
+, for t ∈ (T1, T2], the test error is:
+LD(W(t)) ≤ α+
+exp
+ c4
+2π − c10η4∥µ∥8
+2(t − T1)2(t − T1 − 1)2SNR2
+
+.
+• (Phase 3: Convergence ) There exists T3 =
+Θ
+ 
+n−1ϵ−1∥µ∥−2
+2 ∥υ∥−2
+2
+
+, and for t ∈ (T2, T3]:
+– The training loss converges to ϵ: LS(W(t)) ≤ ϵ.
+– The upper bound of the test error is close to the
+noise rate α:
+LD(W(t)) ≤ α + exp
+ c12
+2π − c14η4(t − T2)4∥µ∥6
+2 · SNR2
+2σ2v
+
+.
+Theorem 4.2 analyzes the scenario in which a transformer
+satisfies the condition for benign overfitting, i.e., a large
+SNR where N · SNR2 = Ω(1) . This condition suggests
+that the model training dynamics can be divided into three
+stages:
+1. Initialization stage: At the beginning, when all model
+parameters are initialized according to Assumption 4.1,
+the transformer parameters have not been sufficiently
+trained, resulting in large test errors. During this stage,
+the test loss is influenced by the label-flipping proba-
+bility α and a large constant.
+2. Signal learning stage : In this stage, the attention
+mechanism increasingly focuses on the signal, leading
+to a reduction in test errors. The test loss is propor-
+tional to the number of iterations t, the learning rate η,
+and SNR2. At the beginning of this stage (t = T1), the
+test loss drops to a value similar to the initialization
+stage, given by LD(W(t)) ≤ α + exp
+  c4
+2π
+
+.‘
+3. Convergence stage: During the final stage, the training
+loss converges to a small errorϵ, while the upper bound
+of the test error converges exponentially in terms of
+key factors. Specifically, the test loss is proportional
+to the number of iterations t, the learning rate η, the
+signal strength ∥µ∥, and SNR2, but it is also inversely
+proportional to the initialization variance σ2
+v. At the
+beginning of this stage, the test loss is upper bounded
+by LD(W(t)) ≤ α + exp
+  c12
+2π
+
+.‘ Note that, the con-
+stant c12
+2π when t = T2 is much smaller than c4
+2π when
+t = T1 due to the signal learning in the second stage.
+Theorem 4.3 (Harmful overfitting in transformers ).
+When N −1 · SNR−2 = Ω(1) , for any ϵ > 0, under As-
+sumption 4.1, with probability at least 1 − δ :
+• (Phase 1: Initialization ) There exists T1 = 56N
+η 1
+4 σ2pd∥υ∥2
+2
+,
+for t ∈ (0, T1], such that the test error is:
+LD(W(t)) ≤ α + O(1).
+• (Phase 2: Noise learning ) There exists T2 =
+Θ
+
+N
+ησ 2pd∥υ∥2
+2 log(6N 2M 2/δ)
+
+. For t ∈ (T1, T2], the test
+error is:
+LD(W(t)) ≤ (1
+2 − α)
+ 
+O
+ 
+d
+1
+2 (log(N 2/δ))3
+mv∥µ∥2
+2∥v∥2
+2
+!
++O
+
+ηd
+1
+2 (log(N 2/δ))3(t − T1)
+ 1
+mv∥µ∥2
+2N ∥v∥2
+2
++ 1
+N
+
++O
+ ηd∥ v∥2
+2(t − T1)
+N
+
+• (Phase 3: Divergence ) There exists T3 =
+Θ
+
+N
+ηϵσ 2pd∥υ∥2
+2
+
+, t ∈ (T2, T3] such that:
+– The training loss converges to ϵ: LS(W(t)) ≤ ϵ.
+– The test loss is higher:
+LD(W(t)) ≥ (1−α) log
+ 
+1 + 2e
+1
+2
+1 + e
+1
+2
+!
++α log
+
+2 + e− 1
+2
+
+.
+Theorem 4.3 describes the training dynamics under harmful
+overfitting, where the signal-to-noise ratio (SNR) is small,
+satisfying SNR ≤ O(1/
+√
+N). The training process is di-
+vided into three stages:
+• Initialization Stage: The upper bound on the test loss
+in this stage is similar to that in the initialization stage
+of benign overfitting.
+• Noise Learning Stage : As training progresses, the
+upper bound on the test loss increases with respect
+to the number of iterations t, since the transformer
+model starts learning the noise instead of the signal.
+The longer the training, the greater the accumulation
+of errors.
+• Divergence Stage: Once the model begins fitting the
+noise, the test error diverges and is larger than a large
+constant. The lower bound of the test loss exceeds
+0.483 when α = 0 and 0.721 when α = 1/2.
+4
+
+Understanding Generalization in Transformers
+4.1. Comparison with Prior Works
+Compared with (Kou et al., 2023; Cao et al., 2022; Shang
+et al., 2024), we extend the feature learning framework from
+CNN to the transformer and provide the test error for each
+stage. Compared with (Magen et al., 2024), who inves-
+tigated benign overfitting in single head attention models
+without label noise, our setup is more sophisticated. We
+incorporate a linear layer weighted by υ after the attention
+layer and relax the assumption of orthogonality between
+noise and signal. In contrast to (Li et al., 2024b), who stud-
+ied the training dynamics of two-layer transformers using
+the softmax activation function and sign gradient descent,
+our findings are more comprehensive. We address both
+benign and harmful overfitting, adjust the linear layer dif-
+ferently, and provide conditions for the phase transition
+between the two types of overfitting. When compared to
+(Jiang et al., 2024), who explored the training dynamics of
+two-layer transformers without considering label noise, our
+approach is more practical. We take label-flipping noise
+into account and calculate the test losses for each stage of
+training more precisely.
+5. Proof Techniques
+In this section, we present the main proof techniques for
+studying the training dynamics and the specific test loss in
+both benign and harmful overfitting scenarios. The complete
+proofs of Theorem 4.2 and Theorem 4.3 are provided in the
+appendix.
+5.1. Key Technique 1: Distinct Test Errors between
+Benign and Harmful Overfitting
+We are aware that due to the existence of label-flipping
+noise, the Bayes optimal test error is at least α. So the gap
+between the test error and the training error is at leastα. This
+circumstance precludes us from applying commonly used
+standard bounds based on uniform convergence (Bartlett
+et al., 2017; Neyshabur et al., 2018) or stability (Zhang
+et al., 2017; Mou et al., 2017; Chen et al., 2018).
+To simplify the theoretical analysis, we use two forms with
+distinct test errors. In the analysis of benign overfitting,
+we will conduct an algorithm-dependent test error analysis.
+Firstly, we can decompose the test error as follows:
+LD(W(t)) =P(y ̸= sign(f(θ, X, υ)))
+≤α + P(byf (θ, X, υ) ≤ 0). (2)
+Using (2), the analysis of test error can be reduced to bound-
+ing the wrong prediction probability P(byf (θ, x, υ) ≤ 0).
+In the analysis with harmful overfitting, we use the ordinary
+representation and the full expectation formula
+E[Z] = E[Z|A]P (A) + E[Z|A]P (A).
+which can split the test loss into two parts: label not flipped
+and label flipped respectively, so the test loss is as follows:
+LD(W(t)) = Eℓ[yf (θ, X, υ)]
+= (1 − α)Ey∈byℓ(yf (θ, X, υ))
++ αEy∈−byℓ(−yf (θ, X, υ)).
+(3)
+5.2. Key Technique 2: Splitting V (t)
++ , V (t)
+− and V (t)
+ξ
+byf (θ, x, υ)
+= 1
+mv
+X
+r∈[mv ]
+(υT x1(S11 + S21)W (t)
+V,r + υT x2(S12 + S22)W (t)
+V,r )
+=
+X
+j
+X
+r∈[mv ]
+[(S11 + S21)⟨W (t)
+V j,r , x1⟩υ + (S12 + S22)⟨W (t)
+V j,r , x2⟩υ]
+=
+X
+j,r
+[(S11 + S21)(µT
++W (t)
+vj,rυ + µT
+−W (t)
+V j,r υ) + (S12 + S22)ξT W (t)
+V j υ]
+=
+X
+j,r
+[(S11 + S21)(V (t)
++ + V (t)
+− ) + (S12 + S22)V (t)
+ξ ].
+Because it involves label flipping, the model output value
+can be divided into real label by and flipped label −by. We
+consider:
+Definition 5.1 (Splitting of V vector).
+V (t)
++by =
+X
+r
+arV (t)
++ ,
+V (t)
++(−by) =
+X
+r
+brV (t)
++ ,
+V (t)
++ = V (t)
++by + V (t)
++(−by).
+Similarly, we split V (t)
+− and V (t)
+ξ for j = ±by.
+Lemma 5.2 (The test loss of benign overfitting). When ana-
+lyzing the second phase of benign overfitting, by substituting
+Key Technique 2 into the calculation of Key Technique 1, we
+have
+P (byf (θ, x, υ) ≤ 0)
+=P
+ X
+r
+(S11 + S21)(V (t)
++,by + V (t)
+−,by) + (S12 + S22)V (t)
+ξ,by
+≤
+X
+r
+
+(S11 + S21)(V (t)
++ + V (t)
+− ) + (S12 + S22)V (t)
+ξ,(−by)
+!
+⩽P
+ X
+r
+S11 + S21
+S12 + S22
+
+V (t)
++,by + V (t)
+−,by
+
+≤ V (t)
+ξ,(−by) + O(1)
+!
+.
+5.3. Key Technique 3: Update Rules of WQ, WK,WV
+Another key problem we encountered in theoretical analy-
+sis was handling label-flipping noise. Numerous cases in
+5
+
+Understanding Generalization in Transformers
+practical applications demonstrate that certain deep learning
+models can still exhibit excellent prediction performance
+when dealing with datasets contaminated by label noise.
+This phenomenon starkly contradicts traditional machine
+learning theory. To effectively learn from data that contain
+both correct signals and flip noise, the model is compelled
+to fit the noise induced by label flips. Undoubtedly, this will
+have a negative impact on the model’s generalization ability
+on new data. Moreover, label-flip noise is highly likely to
+steer the learning algorithm towards an incorrect optimiza-
+tion direction, making it arduous to capture valuable signals
+within the data.
+Now, let’s delve into the update strategy of parametersρ(t)
+V,+,
+ρ(t)
+V,−, ρ(t)
+V,ξ,i.According to (Jiang et al., 2024), we can get the
+following two lemmas. In the following two lemmas, we
+denote S+ := {i ∈ [N] : yi = 1}, S− := {i ∈ [N] : yi =
+−1} in order to analyze the dynamic changes of training
+internal mechanism under label flipping.
+Lemma 5.3 ( Update rules of WV ). Let W (t)
+V represent
+the V matrix of the Transformer during the t-th iteration
+of gradient descent. The coefficients ρ(t)
+V,+, ρ(t)
+V,−, ρ(t)
+V,ξ,i
+specified in this lemma adhere to the following iterative
+equations:
+ρ(0)
+V,+ = 0, ρ (0)
+V,− = 0, ρ (0)
+V,ξ,i = 0,
+V (t)
++ = µ⊤
++W (t)
+V υ = µ⊤
++W (0)
+V υ + ρ(t)
+V,+∥υ∥2
+2,
+V (t)
+− = µ⊤
+−W (t)
+V υ = µ⊤
+−W (0)
+V υ + ρ(t)
+V,−∥υ∥2
+2,
+V (t)
+ξ,i = ξ⊤
+i W (t)
+V υ = ξ⊤
+i W (0)
+V υ + ρ(t)
+V,ξ,i ∥υ∥2
+2
+for i ∈ {1, . . . , N}.
+6. Experiments
+In this section, the theoretical results are verified by a series
+of experiments, and the relevant experimental design and
+code implementation refer to the literature (Jiang et al.,
+2024). The data sets and models are constructed in strict
+accordance with Definition 3.1. The specific design is as
+follows:
+1. Dataset: We generate the training set and the test set
+according to the theoretical definition. Specifically,
+each data point is divided into two parts (M=2): signal
+and noise. The signal is generated from two mutually
+orthogonal vectors, ∥µ∥2 · e1 and ∥µ∥2 · e2., with
+equal probability, where e1 = [1, 0, . . . ,0]⊤ and e2 =
+[0, 1, . . . ,0]⊤. The noise is generated from Gaussian
+noise N (0, σ2
+pI). The data size N is not fixed in our
+experiment. In Sections 6.1, 6.2, and 6.3, to investigate
+the impact of N variation on test loss, we vary N from
+2 to 20. In the remaining experiments, to allow the
+model to fully learn the data, we fix N at 100. For
+the composition parameters of the signal-to-noise ratio
+(SNR ), we vary the signal µ from 1 to 100, while
+fixing the noise variance at 4, to explore the effect of
+SNR on benign overfitting.
+2. Model: We define the model as a simple two-layer
+transformer model used to explore the relevant factors
+that affect benign overfitting, consisting of an atten-
+tion layer and multiple layers of perceptrons. The
+dimensions of the weight matrix are all 512. Initial-
+ize parameters using PyTorch’s default initialization
+method. We set the target loss to 0.01 and conducted
+experiments using the full batch descent method.
+All experimental results were the average of 20 repeated ex-
+periments. And all experiments were conducted on NVIDIA
+A100 GPU.
+6.1. Three Stages of Training Process
+In this section, we conduct an in-depth analysis of the be-
+nign and harmful overfitting behavior of the loss function,
+attention weight, and WV during training, and study the
+influence of different label inversion probabilitiesα on them.
+Label flipping is applied to the signal with reversal probabil-
+ities α ∈ { 0.2, 0.1, 0.01, 0.001}, and the model is trained
+to examine the changes in training loss, test loss, signal
+attention weight (atten signal), noise attention weight (at-
+ten noise), as well as the projections of the WV onto the
+signal (V signal) and onto the noise (V noise) throughout
+the training process. Previous studies have identified three
+distinct stages in this process, and we conduct experiments
+to carefully analyze the changes in each stage. The specific
+results are presented in the following figure.
+Figure 1 (a) and (b) show the training and test losses of
+Transformers under benign and harmful overfitting. Ini-
+tially, loss reduction is minimal but quickly transitions to
+a second stage where test loss drops significantly before
+stabilizing. Higher label-flipping probabilities lead to in-
+creased final test loss due to added noise interfering with
+signal discrimination.
+Figure 1 (c) and (d) illustrate attention dynamics for signals
+and noise. In benign overfitting, early-stage attention is
+undifferentiated but quickly shifts toward signals, improving
+discrimination. Eventually, attention stabilizes, allowing the
+model to distinguish signals from noise. However, at a label-
+flipping probability of 0.1, attention to signals weakens,
+reducing discriminative ability.
+In harmful overfitting, the model initially struggles to distin-
+guish signals from noise but gradually shifts focus toward
+noise, leading to poor learning performance. In both cases,
+excessive noise attention degrades the model’s ability to
+learn meaningful patterns.
+6
+
+Understanding Generalization in Transformers
+Three stage analysis of losses
+0 100 200 300 400 500
+Training Iterations t
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7T est Loss
+p=0.1
+p=0.01
+p=0.001
+traning_losss
+test_loss
+(a) Benign overfitting
+0 100 200 300 400 500
+Training Iterations t
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7T est Loss
+p=0.1
+p=0.01
+p=0.001
+harm_training_loss
+harm_test_loss (b) Harmful overfitting
+Three-stage analysis of atten
+0 100 200 300 400 500
+Training Iterations t
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6Attention Score
+p=0.1
+p=0.01
+p=0.001
+attn_signals
+attn_noises
+(c) Benign overfitting
+0 100 200 300 400 500
+Training Iterations t
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6Attention Socre
+p=0.1
+p=0.01
+p=0.001
+harm_attn_signals
+harm_attn_noises (d) Harmful overfitting
+Three stage analysis of weight v matrix
+0 100 200 300 400 500
+Training Iterations t
+0
+1
+2
+3
+4
+5
+6
+7
+8Initialize variance 
+p=0.1
+p=0.01
+p=0.001
+V_signals
+V_noises
+(e) Benign overfitting
+0 100 200 300 400 500
+Training Iterations t
+0
+2
+4
+6
+8Initialize variance
+p=0.1
+p=0.01
+p=0.001
+harm_V_signal
+harm_V_noises (f) Harmful overfitting
+Figure 1. Training stage analysis of benign overfitting and harmful
+overfitting under label flipping conditions (Experimental Design
+Reference (Jiang et al., 2024)), (a)(b): Test loss and training loss
+vary over time; (c)(d): Signal atten and noise atten vary over time;
+(e)(f): Signal V and noise V vary over time.
+6.2. Phase Transition between Benign Overfitting and
+Harmful Overfitting
+In this section, we will explore the overall impact of SNR
+and N on test loss. To further investigate the boundary of
+benign overfitting, we will add different label flips to the
+data set. The specific results are shown in the following
+figure:
+As illustrated in Figure 2, the test loss demonstrates a con-
+sistent upward trend as both the data volume and signal-
+to-noise ratio increase. Across various flipping probability
+conditions, while the mean test loss escalates with higher
+flipping probabilities, the overall loss distribution remains
+stable. This phenomenon can be attributed to the fact that
+label flipping alters the signal labels, effectively reducing
+(a) α = 0.001
+ (b) α = 0.01
+(c) α = 0.1
+ (d) α = 0.2
+Figure 2. The test loss w.r.t. different label-flipping probability
+α. Figure (a) represents the heat map drawn at a label flipping
+probability of α = 0 .001, Figure (b) represents the heat map
+drawn at a label flipping probability of α = 0 .01, Figure (c)
+represents the heat map drawn at a label flipping probability of
+α = 0.1, and Figure (d) represents the heat map drawn at a label
+flipping probability of α = 0 .2(Experimental design originated
+from (Jiang et al., 2024)).
+the sample size N , thereby leading to an increase in average
+loss. However, since the reduction in N does not impact the
+signal distribution, the loss distribution remains unchanged.
+This observation will be further substantiated in subsequent
+experimental validations. Figure 3 is the heat map after
+further processing of Figure 2, specifically highlighting the
+parts of benign overfitting. We have specifically highlighted
+the regions corresponding to benign overfitting and overlaid
+the theoretically derived formula as a fitted curve. Notably,
+as the flipping probability α increases, The fitted curve has
+not undergone any spatial deformation. This observation
+aligns with our theoretical derivation, which indicates that
+the boundary of benign overfitting is solely determined by
+the signal-to-noise ratio (SNR ) and the sample size N, in-
+dependent of α. This consistency between empirical results
+and theoretical predictions further validates our analysis.
+6.3. The Impact of Critical Line
+In section 6.2 , we performed a preliminary analysis of the
+changes of the heat map in the loss of the test under the com-
+bined influence of SNR, N, and α. To eliminate the variable
+as a primary contributing factor, a systematic analysis of
+individual variables was conducted as detailed in Appendix
+F. Furthermore, the experiment described in Section 6.2 was
+7
+
+Understanding Generalization in Transformers
+(a) α = 0.001
+ (b) α = 0.01
+(c) α = 0.1
+ (d) α = 0.2
+Figure 3. Phase transition between benign and harmful overfitting
+based on Figure 2, Map the parts with benign overfitting and the
+parts without benign overfitting to opposite colors.
+extended and enhanced through the inclusion of additional
+control parameters and validation tests.
+In theory, it is mentioned that N · SNR2 = Ω(1) , which
+is the minimum value at which benign overfitting occurs.
+We plotted the graph of this value in Figure 4 under differ-
+ent conditions, and it is not difficult to see from that the
+probability of convergence to Ω(1)) varies for different α.
+α increases this minimum value. And it is not difficult to
+find in Figure 3 that the curve has not undergone any defor-
+mation, indicating that α does not affect the shape of the
+curve, but only causes the curve to shift in space, which
+has an impact on the constant C. From the (b) of the overall
+correlation score drawn Figure 4, it can be seen thatα = 0.1
+and α = 0.001 have a very high degree of similarity, which
+is sufficient to prove our conclusion that α. does not change
+the distribution of the data.
+6.4. Learning Rate
+In the following section, we will explore some influencing
+factors that are rarely mentioned in other papers. In this
+section, we will investigate the impact of learning rate on
+test loss. In theory, there is an upper limit T for the number
+of t. In the experiment, we used 2000 iterations as T. From
+the graph, it can be seen that the three learning rate curves
+have become flat, but there is a significant gap. Reducing
+the learning rate will increase the testing loss of the model,
+which is consistent with our theory.
+(a) The test loss w.r.t. the criti-
+cal line N · SNR2 = C.
+(b) Similarity analysis of α =
+0.1 and α = 0.001.
+Figure 4. (a) shows the variation of C value with α, while (b)
+calculates the similarity between the two images α = 0 .1 and
+α = 0.001, with higher scores indicating higher similarity.
+Figure 5. The test loss w.r.t. different leaning rates.
+6.5. Initialization of Weight V Matrix
+In this section, we examine the impact of the initialization
+of the value matrix WV on the test loss. From Figure 6 (a),
+we observe that as the initialization variance of the weight
+matrix decreases, the test loss shows a downward trend. To
+further investigate the effect of the weight matrix WV on
+the training loss, we designed a second experiment with a
+lower initialization variance, as shown in (b). It is clear that
+the variance stabilizes when it is no less than 1, suggesting
+that the optimal initialization is located near these curves.
+Conclusion
+This paper studies the training dynamics, convergence, and
+generalization for a two-layer transformer with labeled flip
+noise. Firstly, we present generalization error bounds for
+both benign and harmful overfit ting under varying signal-
+to-noise ratios (SNR), Seconly, the training dynamics are
+categorized into three distinct stages, each with its corre-
+sponding error bounds. Overall, the techniques presented
+here pave the way for understanding the generalization of
+transformer-based models.
+Acknowledgements
+The work of Jian Li is supported partially by National Nat-
+ural Science Foundation of China (No. 62106257), and
+supported by “the Fundamental Research Funds for the
+Central Universities”. The work of Yong Liu is supported
+8
+
+Understanding Generalization in Transformers
+(a) The impact of WV Matrix
+Initialization.
+(b) Analysis of Optimal Initial-
+ization of WV Matrix.
+Figure 6. The impact of the initilization of WV . (a) explores the
+test loss in terms of different initialization WV matrices, and (b)
+further studies the optimal value of initialization.
+partially by National Natural Science Foundation of China
+(No.62076234), Beijing Outstanding Young Scientist Pro-
+gram (No.BJJWZYJH012019100020098), the Unicom In-
+novation Ecological Cooperation Plan, and the CCF-Huawei
+Populus Grove Fund.
+Impact Statement
+This paper presents work whose goal is to advance the field
+of Machine Learning. There are many potential societal
+consequences of our work, none which we feel must be
+specifically highlighted here.
+References
+Ben Adlam, Jake Levinson, and Jeffrey Pennington. A
+random matrix perspective on mixtures of nonlinearities
+for deep learning, 2021. URL https://arxiv.org/
+abs/1912.00827.
+Peter Bartlett, Dylan J. Foster, and Matus Telgarsky.
+Spectrally-normalized margin bounds for neural net-
+works, 2017. URL https://arxiv.org/abs/
+1706.08498.
+Peter L. Bartlett, Philip M. Long, G ´abor Lugosi, and
+Alexander Tsigler. Benign overfitting in linear regres-
+sion. Proceedings of the National Academy of Sci-
+ences, 117(48):30063–30070, April 2020. ISSN 1091-
+6490. doi: 10.1073/pnas.1907378117. URL http:
+//dx.doi.org/10.1073/pnas.1907378117.
+Mikhail Belkin, Siyuan Ma, and Soumik Mandal. To under-
+stand deep learning we need to understand kernel learn-
+ing, 2018. URL https://arxiv.org/abs/1802.
+01396.
+Mikhail Belkin, Daniel Hsu, Siyuan Ma, and Soumik
+Mandal. Reconciling modern machine-learning prac-
+tice and the classical bias–variance trade-off. Pro-
+ceedings of the National Academy of Sciences , 116
+(32):15849–15854, July 2019. ISSN 1091-6490. doi:
+10.1073/pnas.1903070116. URL http://dx.doi.
+org/10.1073/pnas.1903070116.
+Mikhail Belkin, Daniel Hsu, and Ji Xu. Two models of
+double descent for weak features. SIAM Journal on
+Mathematics of Data Science, 2(4):1167–1180, January
+2020. ISSN 2577-0187. doi: 10.1137/20m1336072. URL
+http://dx.doi.org/10.1137/20M1336072.
+Yuan Cao, Zixiang Chen, Mikhail Belkin, and Quanquan
+Gu. Benign overfitting in two-layer convolutional neural
+networks, 2022. URL https://arxiv.org/abs/
+2202.06526.
+Yuansi Chen, Chi Jin, and Bin Yu. Stability and convergence
+trade-off of iterative optimization algorithms, 2018. URL
+https://arxiv.org/abs/1804.01619.
+Spencer Frei and Gal Vardi. Trained transformer classifiers
+generalize and exhibit benign overfitting in-context, 2024.
+URL https://arxiv.org/abs/2410.01774.
+Trevor Hastie, Andrea Montanari, Saharon Rosset, and
+Ryan J. Tibshirani. Surprises in high-dimensional ridge-
+less least squares interpolation, 2020. URL https:
+//arxiv.org/abs/1903.08560.
+Yu Huang, Yuan Cheng, and Yingbin Liang. In-context
+convergence of transformers, 2023. URL https://
+arxiv.org/abs/2310.05249.
+Samy Jelassi, Michael E. Sander, and Yuanzhi Li. Vision
+transformers provably learn spatial structure, 2022. URL
+https://arxiv.org/abs/2210.09221.
+Jiarui Jiang, Wei Huang, Miao Zhang, Taiji Suzuki, and
+Liqiang Nie. Unveil benign overfitting for transformer in
+vision: Training dynamics, convergence, and generaliza-
+tion, 2024. URL https://arxiv.org/abs/2409.
+19345.
+Yanhao Jin, Krishnakumar Balasubramanian, and Lifeng
+Lai. Provable in-context learning for mixture of linear
+regressions using transformers, 2024. URL https://
+arxiv.org/abs/2410.14183.
+Yiwen Kou, Zixiang Chen, Yuanzhou Chen, and Quanquan
+Gu. Benign overfitting for two-layer relu convolutional
+neural networks, 2023. URL https://arxiv.org/
+abs/2303.04145.
+Bingrui Li, Wei Huang, Andi Han, Zhanpeng Zhou, Taiji
+Suzuki, Jun Zhu, and Jianfei Chen. On the optimization
+and generalization of two-layer transformers with sign
+gradient descent, 2024a. URLhttps://arxiv.org/
+abs/2410.04870.
+9
+
+Understanding Generalization in Transformers
+Hongkang Li, Meng Wang, Songtao Lu, Xiaodong Cui, and
+Pin-Yu Chen. How do nonlinear transformers learn and
+generalize in in-context learning?, 2024b. URL https:
+//arxiv.org/abs/2402.15607.
+Zhenyu Liao, Romain Couillet, and Michael W Mahoney.
+A random matrix analysis of random fourier features:
+beyond the gaussian kernel, a precise phase transition,
+and the corresponding double descent*. Journal of
+Statistical Mechanics: Theory and Experiment , 2021
+(12):124006, December 2021. ISSN 1742-5468. doi:
+10.1088/1742-5468/ac3a77. URL http://dx.doi.
+org/10.1088/1742-5468/ac3a77.
+Roey Magen, Shuning Shang, Zhiwei Xu, Spencer Frei,
+Wei Hu, and Gal Vardi. Benign overfitting in single-head
+attention, 2024. URL https://arxiv.org/abs/
+2410.07746.
+Neil Mallinar, James B. Simon, Amirhesam Abedsoltan,
+Parthe Pandit, Mikhail Belkin, and Preetum Nakkiran.
+Benign, tempered, or catastrophic: A taxonomy of overfit-
+ting, 2024. URL https://arxiv.org/abs/2207.
+06569.
+Xuran Meng, Jianfeng Yao, and Yuan Cao. Multiple descent
+in the multiple random feature model.Journal of Machine
+Learning Research, 25(44):1–49, 2024. URL http:
+//jmlr.org/papers/v25/22-1389.html.
+Wenlong Mou, Liwei Wang, Xiyu Zhai, and Kai Zheng.
+Generalization bounds of sgld for non-convex learn-
+ing: Two theoretical viewpoints, 2017. URL https:
+//arxiv.org/abs/1707.05947.
+Behnam Neyshabur, Zhiyuan Li, Srinadh Bhojanapalli,
+Yann LeCun, and Nathan Srebro. Towards understand-
+ing the role of over-parametrization in generalization of
+neural networks, 2018. URL https://arxiv.org/
+abs/1805.12076.
+Shuning Shang, Xuran Meng, Yuan Cao, and Difan Zou.
+Initialization matters: On the benign overfitting of two-
+layer relu cnn with fully trainable layers, 2024. URL
+https://arxiv.org/abs/2410.19139.
+Davoud Ataee Tarzanagh, Yingcong Li, Christos Thram-
+poulidis, and Samet Oymak. Transformers as support
+vector machines, 2024. URL https://arxiv.org/
+abs/2308.16898.
+Yuandong Tian, Yiping Wang, Beidi Chen, and Simon Du.
+Scan and snap: Understanding training dynamics and
+token composition in 1-layer transformer, 2023. URL
+https://arxiv.org/abs/2305.16380.
+A. Tsigler and P. L. Bartlett. Benign overfitting in ridge
+regression, 2022. URL https://arxiv.org/abs/
+2009.14286.
+Chiyuan Zhang, Samy Bengio, Moritz Hardt, Benjamin
+Recht, and Oriol Vinyals. Understanding deep learning
+requires rethinking generalization, 2017. URL https:
+//arxiv.org/abs/1611.03530.
+Difan Zou, Jingfeng Wu, Vladimir Braverman, Quanquan
+Gu, and Sham M. Kakade. Benign overfitting of constant-
+stepsize sgd for linear regression, 2021. URL https:
+//arxiv.org/abs/2103.12692.
+10
+
+Understanding Generalization in Transformers
+A. Symbol Notions
+Table 1. Notions related to Query (Q), Key (K), and Value (V).
+Symbols Notions
+q(t)
++ , q(t)
+− , q(t)
+ξ,i vectorized Q, defined as
+q(t)
++ = µ⊤
++W (t)
+Q , q(t)
+− = µ⊤
+−W (t)
+Q , q(t)
+ξ,i = ξ⊤
+i W (t)
+Q
+k(t)
++ , k(t)
+− , k(t)
+ξ,i , k(t)
+ξ,i′ vectorized K, defined as
+k(t)
++ = µ⊤
++W (t)
+K , k(t)
+− = µ⊤
+−W (t)
+K , k(t)
+ξ,i = ξ⊤
+i W (t)
+K , k(t)
+ξ,i′ = ξ⊤
+i′ W (t)
+K
+V (t)
++ , V (t)
+− , V (t)
+ξ,i scalarized V , defined as
+V (t)
++ = µ⊤
++W (t)
+V υ, V (t)
+− := µ⊤
+−W (t)
+V υ, V (t)
+ξ,i := ξ⊤
+i W (t)
+V υ
+Λ(t)
+ξ,±,i, Λ(t)
+ξ,i,±,i′ Λ(t)
+ξ,±,i := ⟨q(t)
+± , k(t)
+± ⟩ − ⟨q(t)
+± , k(t)
+ξ,i⟩,
+Λ(t)
+ξ,i,±,i′ := ⟨q(t)
+ξ,i, k(t)
+± ⟩ − ⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩
+Table 2. Notions related to softmax.
+Symbols Notions
+S11 a general reference to
+exp(⟨q(t)
++ ,k(t)
++ ⟩)
+exp(⟨q(t)
++ ,k(t)
++ ⟩)+exp(⟨q(t)
++ ,k(t)
+ξ,i⟩) for i ∈ S+, and
+exp(⟨q(t)
+− ,k(t)
++ ⟩)
+exp(⟨q(t)
+− ,k(t)
++ ⟩)+exp(⟨q(t)
+− ,k(t)
+ξ,i⟩) for i ∈ S−
+S21 a general reference to
+exp(⟨q(t)
+ξ,i ,k(t)
++ ⟩)
+exp(⟨q(t)
+ξ,i ,k(t)
++ ⟩)+exp(⟨q(t)
+ξ,i ,k(t)
+ξ,i′ ⟩) for i, i′ ∈ S+, and
+exp(⟨q(t)
+ξ,i ,k(t)
+− ⟩)
+exp(⟨q(t)
+ξ,i ,k(t)
+− ⟩)+exp(⟨q(t)
+ξ,i ,k(t)
+ξ,i′ ⟩) for i, i′ ∈ S−
+S12 a general reference to
+exp(⟨q(t)
++ ,k(t)
+ξ,i⟩)
+exp(⟨q(t)
++ ,k(t)
++ ⟩)+exp(⟨q(t)
++ ,k(t)
+ξ,i⟩) for i ∈ S+, and
+exp(⟨q(t)
+− ,k(t)
+ξ,i⟩)
+exp(⟨q(t)
+− ,k(t)
+− ⟩)+exp(⟨q(t)
+− ,k(t)
+ξ,i⟩) for i ∈ S−
+S22 a general reference to
+exp(⟨q(t)
+ξ,i ,k(t)
+ξ,i′ ⟩)
+exp(⟨q(t)
+ξ,i ,k(t)
++ ⟩)+exp(⟨q(t)
+ξ,i ,k(t)
+ξ,i′ ⟩) for i, i′ ∈ S+, and
+exp(⟨q(t)
+ξ,i ,k(t)
+ξ,i′ ⟩)
+exp(⟨q(t)
+ξ,i ,k(t)
+− ⟩)+exp(⟨q(t)
+ξ,i ,k(t)
+ξ,i′ ⟩) for i, i′ ∈ S−
+B. Detailed Proof
+B.1. Detailed Proof in 5.1.
+We can decompose the test error as follows in bengin overfitting:
+P(y ̸= sign(f(θ, X, υ)))
+≤α + P(byf (θ, X, υ) ≤ 0). (2)
+Proof of (2). We can write out the test error as
+LD(W(t)) =P(X,by,y)∼D(y ̸= sign(f(θ, X, υ)))
+=P(X,by,y)∼D(yf (θ, X, υ) ≤ 0)
+=P(X,by,y)∼D(yf (θ, X, υ) ≤ 0, y ̸=by) + P(X,by,y)∼D(yf (θ, X, υ) ≤ 0, y =by)
+=α · P(X,by,y)∼D(byf (θ, X, υ) ≥ 0) + (1 − α) · P(X,by,y)∼D(byf (θ, X, υ) ≤ 0)
+≤α + P(X,by,y)∼D(byf (θ, X, υ) ≤ 0),
+In the second and third equation, we used the definition of D in Definition 3.1.
+11
+
+Understanding Generalization in Transformers
+B.2. Proof of The Theorem
+Theorem B.1. Under Assumption 4.1, in the theoretical analysis of test error in the second and third stages of benign
+overfitting, we define g(ξ) as V (t)
+ξ,(−by) =P
+r
+D
+υW (t)
+−by,r, ξ
+E
+, where W (t)
+−by,r refers to the row vector in parameter matrix W
+with label −by and index r at the t-th training round. Then, we know that for any x ≥ 0, if g : Rn → R is a Lipschitz
+function and c is a constant, the following inequality holds for the test loss.
+P(g(ξ) − Eg(ξ) ≥ x) ≤ exp
+
+− cx2
+σ2p
+Pmv
+r=1
+W (t)
+−by,rυ
+
+2
+2
+
+ .
+Proof. According to Theorem 5.2.2 in Vershynin (2018), we know that for any x ≥ 0, if g : Rn → R is a Lipschitz function,
+it holds that
+P(g(ξ) − Eg(ξ) ≥ x) ≤ exp
+ 
+− cx2
+σ2p∥g∥2
+Lip
+!
+, (4)
+Since g(ξ) is defined as V (t)
+ξ,(−by) =P
+r
+D
+υW (t)
+−by,r, ξ
+E
+, and since ⟨W (t)
+−by,rυ, ξ⟩ ∼ N (0, ∥W (t)
+−by,r∥2
+2∥υ∥2
+2σ2
+p), we have
+|g(ξ) − g(ξ′)| =
+
+mvX
+r=1
+D
+υW (t)
+−by,r, ξ
+E
+−
+mvX
+r=1
+D
+υW (t)
+−by,r, ξ′
+E
+≤
+mvX
+r=1
+
+D
+υW (t)
+−by,r, ξ
+E
+−
+D
+υW (t)
+−by,r, ξ′
+E
+=
+mvX
+r=1
+
+D
+υW (t)
+−by,r, ξ − ξ′
+E
+≤
+mvX
+r=1
+∥W (t)
+−by,r∥2∥υ∥2∥ξ − ξ′∥2
+So, we can get
+∥g∥Lip ≤
+mvX
+r=1
+W (t)
+−by,r υ
+
+2
+, (5)
+By plugging (5) into (4), we get:
+P(g(ξ) − Eg(ξ) ≥ x) ≤ exp
+
+− cx2
+σ2p
+Pmv
+r=1
+W (t)
+−by,rυ
+
+2
+2
+
+ .
+B.3. Proof of The Lemma
+Lemma B.2 (The test loss of benign overfitting in Lemma 5.2).
+P (by(f(θ, X, υ)) ≤ 0) = P
+ X
+r
+h
+(S11 + S21)V (t)
++r,by + (S11 + S21)V (t)
+−r,by + (S12 + S22)V (t)
+ξ,ir,by
+i
+≤
+X
+r
+h
+(S11 + S21)(V (t)
++r + V (t)
+−r ) + (S12 + S22)V (t)
+ξ,ir,(−by)
+i!
+≤ P
+ X
+r
+S11 + S21
+S12 + S22
+
+V (t)
++r,by + V (t)
+−r,by
+
+≤ V (t)
+ξ,ir,(−by) + o(1)
+!
+(6)
+Proof. where the first equality is by the conversion relationship between V (t)
++ , V (t)
++,by, V (t)
++,(−by); the second inequality is
+because it is a benign overfitting stage, the signal memory is higher than the noise memory. Here we see that the left side of
+the inequality is dominated by the signal memory, and the right side of the inequality satisfies (16) and (19).
+12
+
+Understanding Generalization in Transformers
+Lemma B.3 (Relationship of constants). To ensure the continuity of the test error function, we need to verify that when
+t = T1, the first - stage test error equals the initial test error of the second stage. When t = T2, the second - stage test error
+is equal to the initial test error of the third stage. It is evident that this holds true when t = T1. We only verify this for
+t = T2.
+Proof.
+α + exp
+h c4
+2π − c10η4∥µ∥8(T2 − T1)2(T2 − T1 − 1)2SNR2
+i
+=α + exp
+ c12
+2π
+
+c4 − c12
+2π · c10
+= η4∥µ∥8(T2 − T1)2(T2 − T1 − 1)2SNR2
+It is sufficient to ensure that the above relations are satisfied among the three constants.
+C. Basic Inequality
+C.1. Benign Overfitting
+According to (Jiang et al., 2024), we know the following inequality holds: when benign overfitting occurs in the second
+stage, for t ∈ (T1, T2] , the following inequality holds:
+exp(⟨q(t)
++ , k(t)
+ξ,i ⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩) + exp(⟨q(t)
++ , k(t)
+ξ,i ⟩)
+≤
+exp(⟨q(t)
++ , k(t)
+ξ,i ⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩)
+= 1
+c5 exp(Λ(t)
+ξ,±,i)
+(7)
+exp(⟨q(t)
+ξ,i , k(t)
+ξ,i′⟩)
+exp(⟨q(t)
+ξ,i , k(t)
++ ⟩) + exp(⟨q(t)
+ξ,i , k(t)
+ξ,i′⟩)
+≤ 1
+c7 exp(Λ(t)
+ξ,i,±,i′)
+(8)
+V (t)
++ ≥ ηc1∥µ∥2
+2∥υ∥2
+2(t − T1) (9)
+|V (t)
+± | ≤ O(d− 1
+4 ) + ηc4∥µ∥2
+2∥υ∥2
+2(t − T1) (10)
+Λ(t+1)
+ξ,±,i ≥ log
+ 
+exp(Λ(T1)
+ξ,±,i) + η2c8∥µ∥4
+2∥υ∥2
+2d
+1
+2
+N(log(24N 2/δ))2 · (t − T1)(t − T1 + 1)
+!
+(11)
+Λ(t+1)
+ξ,i,±,i′ ≥ log
+ 
+exp(Λ(T1)
+ξ,i,±,i′) + η2c8σ2
+pd∥µ∥2
+2∥υ∥2
+2d
+1
+2
+N(log(24N 2/δ))2 · (t − T1)(t − T1 + 1)
+!
+(12)
+W (t+1)
+V υ − W (t)
+V υ
+
+2
+= O
+
+η · max
+n
+∥µ∥2 , σp
+√
+d
+o
+· ∥υ∥2
+
+(13)
+V (T2)
++ ≥ 6 ·
+V (T2)
+ξ,i
+ , (14)
+V (T2)
+− ≤ −6 ·
+V (T2)
+ξ,i
+ . (15)
+13
+
+Understanding Generalization in Transformers
+V (T2)
++
+ ,
+V (T2)
+−
+ ,
+V (T2)
+ξ,i
+ = o(1), (16)
+when benign overfitting occurs in the third stage, for t ∈ (T2, T3], the following inequality holds:
+log
+
+exp
+
+V (T2)
++
+
++ ηc11∥µ∥2
+2∥υ∥2
+2(t − T2)
+
+≤ V (t)
++ ≤ 2 log
+
+O
+1
+ϵ
+
+, (17)
+− 2 log
+
+O
+1
+ϵ
+
+≤ V (t)
+− ≤ − log
+
+exp
+
+−V (T2)
+−
+
++ ηc11∥µ∥2
+2∥υ∥2
+2(t − T2)
+
+(18)
+V (t)
++
+ ,
+V (t)
+−
+ ,
+V (t)
+ξ,i
+ = o(1), (19)
+C.2. Harmful Overfitting
+According to (Jiang et al., 2024), we know the following inequality holds: when harmful overfitting occurs in the second
+stage, for t ∈ (T1, T2], the following inequality holds:
+V (t)
+ξ,i ≥ ηc13σ2
+pd∥υ∥2
+2(t − T1)
+N (20)
+V (t)
+ξ,i ≤ − ηc14σ2
+pd∥υ∥2
+2(t − T1)
+N (21)
+|V (t)
+± | ≤ O(d− 1
+4 ) + ηc15σ2
+pd∥υ∥2
+2(t − T1)
+N (22)
+|V (t)
+ξ,i | ≤ O(d− 1
+4 ) + ηc16σ2
+pd∥υ∥2
+2(t − T1)
+N (23)
+Softmax(⟨q(t)
+± , k(t)
+± ⟩) = O
+ 
+σ2
+pd(log(24N 2/δ))3
+∥µ∥2
+2∥υ∥2
+2d
+1
+2
+!
+(24)
+Softmax(⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩) = 1 − O
+ 
+(log(24N 2/δ))3
+∥υ∥2
+2d
+1
+2
+!
+(25)
+V (T2)
++
+ ,
+V (T2)
+−
+ ,
+V (T2)
+ξ,i
+ = o(1), (26)
+When harmful overfitting occurs in the third stage, for t ∈ (T2, T3], the following inequality holds:
+V (T3)
+± = o(1) (27)
+V (t)
++
+ ,
+V (t)
+−
+ ,
+V (t)
+ξ,i
+ = o(1), (28)
+by(f(θ, X, υ)) = 1
+mv
+mvX
+r=1
+
+υT x1(S11 + S21)W (t)
+V r + υT x2(S12 + S22)W (t)
+V r
+
+≥ log(1 + e−1/2), with probability at least 1
+2 (29)
+D. Upper Bound of Benign Overfitting
+D.1. Stage I Test Loss
+Theorem D.1 ((First part of Theorem 4.2)). Under the same conditions as Theorem 4.2, when N · SNR2 = Ω(1), there
+exists T1 = 140N
+ηd4(N ∥µ∥2
+2−1202C2pσ2pd)∥υ∥2
+2
+, and for t ∈ (0, T1], the test error is:
+LD(W(t)) ≤ α + O(1)
+14
+
+Understanding Generalization in Transformers
+Proof. In the paper, the high test error in the first stage of benign overfitting, which isα + O(1), can be understood from
+the following aspects.In terms of model structure, during the initial phase of gradient optimization, the error decline is
+slow. After initialization, the weight matrices in the Transformer, such as WQ, WK, and WV , have not been effectively
+adjusted. This makes it difficult for the model to capture the signal features of the data. From the perspective of the attention
+mechanism related to Q and K in the initial stage of the transformer, it fails to clearly distinguish between signals and noise.
+At the beginning, the values of the Q and K matrices are randomly initialized and not well-tuned. As a result, the output
+of the activation function assigns relatively uniform attention weights to different elements in the sequence. Rather than
+concentrating more attention on the signal parts of the data, the attention mechanism spreads its focus evenly across both
+signal and noise. This means that the model is unable to effectively highlight the important signal features in the training
+data, leading to insufficient utilization of the signal information and poor data learning ability. These factors work together
+to make the test error high and equal to α + O(1).
+D.2. Stage II Test Loss
+Theorem D.2 ((Second part of Theorem 4.2)). Under the same conditions as Theorem 4.2, when N · SNR2 = Ω(1),there
+exists T2 = Θ
+
+1
+η∥µ∥2
+2∥υ∥2
+2
+
+, and for t ∈ (T1, T2], the test error is:
+LD(W(t)) ≤ α + exp
+ c4
+2π − c10η4∥µ∥8
+2(t − T1)2(t − T1 − 1)2SNR2
+
+Proof. For the sake of convenience, we use (X,by, y) ∼ D to denote the following: data point (X, y) follows distribution D
+defined in Assumption 4.1 , andby is its true label. We can write out the test error as (2),
+LD(W(t)) ≤α + P(X,by,y)∼D(byf (θ, X, υ) ≤ 0),
+Therefore we need to calculate an upper bound for P(X,by)∼D(byf (θ, X, υ) ≤ 0).
+To achieve this and take into account the existence of label flipping ,we write X = ( yµ, ξ), we can get the following in-
+equality from lemma B.2.
+P (byf (θ, X, υ) ≤ 0) ⩽ P
+ X
+r
+S11 + S21
+S12 + S22
+
+V (t)
++r,by + V (t)
+−r,by
+
+≤ V (t)
+ξ,(−rby) + o(1)
+!
+.
+Denote g(ξ) as V (t)
+ξ,(−by) =P
+r
+D
+υW (t)
+−by,r, ξ
+E
+. The following inequality holds according to the update rules of the V vector
+in Lemma 5.3, the first equality is derived from (12), and the second equality is due to the initialization of the V vector.
+W (t)
+V υ
+
+2
+≤
+W (0)
+V υ
+
+2
++
+t−1X
+t′=0
+W (t′+1)
+V υ − W (t′)
+V υ
+
+2
+=
+W (0)
+V υ
+
+2
++ tO
+
+η · max
+n
+∥µ∥2 , σp
+√
+d
+o
+· ∥υ∥2
+
+= O
+
+σν ∥υ∥2
+√
+d + tη ∥υ∥2 max
+n
+∥µ∥2 , σp
+√
+d
+o
+(30)
+Since g(ξ) as V (t)
+ξ,(−by) =P
+r
+D
+υW (t)
+−by,r, ξ
+E
+, and since ⟨W (t)
+−by,rυ, ξ⟩ ∼ N (0, ∥W (t)
+−by,r∥2
+2∥υ∥2
+2σ2
+p), in the benign overfitting
+stage, from (30) the strength of the signal is higher than that of the noise, so we can get:
+Eg(ξ) =
+mvX
+r=1
+E⟨υW (t)
+−by,r, ξ⟩
+=
+mvX
+r=1
+∥W (t)
+−by,r∥2σpυ
+√
+2π
+= σp√
+2π
+mvX
+r=1
+∥W (t)
+−by,rυ∥2 (31)
+≤ O
+ 
+σV σp ∥υ∥2
+r
+d
+2π + tησp ∥υ∥2 ∥µ∥√
+2π
+!
+15
+
+Understanding Generalization in Transformers
+The first inequalities are derived from B.2, and we drop the constant o(1) to simplify the analysis. The first equality is due to
+Theorem B.1 and (31). The last inequality is due to the fact that (s − t)2 ≥ s2
+2 − t2 for all s, t ≥ 0.
+P (by(f(θ, X, υ)) ≤ 0) ⩽ P
+ 
+V (t)
+ξ,ir,(−⃗ y) ≥
+X
+r
+S11 + S21
+S12 + S22
+
+V (t)
++r,⃗ y+ V (t)
+−r,⃗ y
+!
+= P
+ 
+g(ξ) − E{g(ξ)} ≥
+X
+r
+S11 + S21
+S12 + S22
+
+V (t)
++r,⃗ y+ V (t)
+−r,⃗ y
+
+− σp√
+2π
+mvX
+r=1
+W (t)
+−r⃗ y,rυ
+
+2
+!
+⩽ exp
+
+
+−
+c2
+ 
+P
+r
+S11+S21
+S12+S22
+
+V (t)
++r,⃗ y+ V (t)
+−r,⃗ y
+
+−
+σp
+Pmv
+r=1
+W (t)
+−⃗ y,rυ
+
+2√
+2π
+!2
+σ2p
+Pmv
+r=1
+W (t)
+−⃗ y,rυ
+
+2
+2
+
+
+= exp
+
+−c3
+
+
+P
+r
+S11+S21
+S12+S22
+
+V (t)
++r,⃗ y+ V (t)
+−r,⃗ y
+
+σp
+Pmv
+r=1
+W (t)
+−⃗ y,rυ
+
+2
+− 1√
+2π
+
+
+2
+
+⩽ exp(c4/2π) · exp
+
+− c5
+2
+
+
+P
+r
+S11+S21
+S12+S22
+
+V (t)
++r,⃗ y+ V (t)
+−r,⃗ y
+
+σp
+Pmv
+r=1
+W (t)
+−⃗ y,rυ
+
+2
+
+
+2
+ (32)
+When benign overfitting occurs, we know the bounds of the following terms in the second stage:
+• 1 − Sof tmax(⟨q(t)
++ , k(t)
++ ⟩)
+• 1 − Sof tmax(⟨q(t)
+ξ,i, k(t)
++ ⟩)
+• Sof tmax(⟨q(t)
++ , k(t)
+ξ,i⟩)
+• Sof tmax(⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩)
+It is noted that the following inequalities hold,so we only need to calculate the last two terms:
+1 − Sof tmax(⟨q(t)
++ , k(t)
++ ⟩) =
+X
+j
+Sof tmax(⟨q(t)
++ , k(t)
+ξ,i⟩)
+1 − Sof tmax(⟨q(t)
+ξ,i, k(t)
++ ⟩) =
+X
+j
+Sof tmax(⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩)
+By plugging (11) into (7), and plugging (12) into (8), we can get the following inequality holds:
+exp(⟨q(t)
++ , k(t)
+ξ,i ⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩) + exp(⟨q(t)
++ , k(t)
+ξ,i ⟩)
+≤ 1
+c5 exp
+
+Λ(t)
+ξ,±,i
+
+≤ 1
+c5 exp
+
+Λ(T1)
+ξ,±,i
+
++ η2c8∥µ∥4
+2∥υ∥2
+2d
+1
+2
+h
+N (log(24N 2/δ))2 · (t − T1)(t − T1 − 1)
+≤ 1
+c6 + η2c13∥µ∥4
+2∥υ∥2
+2d
+1
+2
+h
+N (log(24N 2/δ))2 · (t − T1)(t − T1 − 1)
+. (33)
+16
+
+Understanding Generalization in Transformers
+exp(⟨q(t)
+ξ,i , k(t)
+ξ,i′⟩)
+exp(⟨q(t)
+ξ,i , k(t)
++ ⟩) + exp(⟨q(t)
+ξ,i , k(t)
+ξ,i′⟩)
+≤ 1
+c7 exp(Λ(t)
+ξ,i,±,i′)
+≤ 1
+c8 +
+η2C13σ2pd∥µ∥2
+2∥υ∥2
+2d
+1
+2
+h
+N (log(24N 2/δ))2 · (t − T1)(t − T1 − 1)
+. (34)
+By adding (33) and (34), we obtain the following result:
+S11 + S21
+S12 + S22
+= 1 − S22
+S22
+= −1 + 1
+S12
+≥ η2c9 ∥µ∥4 ∥υ∥2 d
+1
+2
+h
+N(log(24N 2/δ))2 (t − T1)(t − T1 − 1) (35)
+P
+r
+S11+S21
+S12+S22
+
+V (t)
++r,ˆy + V (t)
+−r,ˆy
+
+σp
+Pmv
+r=1
+W (t)
+−ˆy,rυ
+
+2
+≥
+η2c9∥µ∥4∥υ∥2d
+1
+2
+N (log(24N 2/δ))2 (t − T1)(t − T1 − 1)(V (t)
++r ˆy + V (t)
+−r ˆy)
+O(σpσv ∥υ∥
+√
+d + (t − T1)ησp ∥υ∥2 ∥µ∥)
+≥
+η3c9∥µ∥6∥υ∥4d
+1
+2 (t−T1)2(t−T1−1)
+N (log(24N 2/δ))2 − O(d
+−1
+4 ) · η2c∥µ∥4∥υ∥2d
+1
+2 (t−T1)(t−T1−1)
+N (log(24N 2/δ))2
+O(σpσv ∥υ∥
+√
+d + (t − T1)ησp ∥υ∥2 ∥µ∥)
+≥ η3c9 ∥µ∥6 ∥υ∥4 d
+1
+2 (t − T1)2(t − T1 − 1)
+N(log(24N 2/δ))2 · O(σpσv ∥υ∥
+√
+d + (t − T1)ησp ∥υ∥2 ∥µ∥)
+≈ η3c9 ∥µ∥6 ∥υ∥4 d
+1
+2 (t − T1)2(t − T1 − 1)
+N(log(24N 2/δ))2 · O(ησp (t − T1) ∥υ∥2 ∥µ∥)
+≈ O
+ 
+η2c9 ∥µ∥5 ∥υ∥2 d
+1
+2 (t − T1)(t − T1 − 1)
+N(log(24N 2/δ))2 · σp
+!
+≈ O
+ 
+η2c9 ∥µ∥5 ∥υ∥2 (t − T1)(t − T1 − 1)
+(log(24N 2/δ))2 · σp
+!
+(36)
+In the above formulas, we substitute (9), (10), (35) and (31) to obtain the first and second inequalities. By applying the idea
+of scaling in the last few steps, then we plug (36) into (32).
+P (ˆyf (θ, X, υ) ≤ 0) ≤ exp(c4/2π) exp
+
+− c5
+2
+
+
+P
+r
+S11+S21
+S12+S22
+
+V (t)
++r,ˆy + V (t)
+−r,ˆy
+
+σp
+Pmv
+r=1
+W (t)
+−ˆy,rυ
+
+
+
+2
+
+≤ exp(c4/2π) exp
+"
+− c5
+2 O
+ 
+η4c9 ∥µ∥10 ∥υ∥4 (t − T1)2(t − T1 − 1)2
+σ2p(log(24N 2/δ))4
+!#
+≤ exp
+"
+c4
+2π − c10
+η4 ∥µ∥8 ∥υ∥4 (t − T1)2(t − T1 − 1)2
+(log(24N 2/δ))4 · SNR2
+#
+≤ exp
+h c4
+2π − c10η4 ∥µ∥8 (t − T1)2(t − T1 − 1)2 · SNR2
+i
+17
+
+Understanding Generalization in Transformers
+D.3. Stage III Test Loss
+Theorem D.3 ((Third part of Theorem 4.2)). Under the same conditions as Theorem 4.2, there exists a large valued
+constant C such that T3 = Θ
+ 
+n−1ϵ−1∥µ∥−2
+2 ∥υ∥−2
+2
+
+. For t ∈ (T2, T3], when N · SNR2 = Ω(1), the upper bound of the
+test error approaches the noise rate α.
+LD(W(t)) ≤ α + exp
+ c12
+2π − c14η4(t − T2)4∥µ∥6
+2 · SNR2
+2σ2v
+
+Proof. we can get the following inequality from Lemma B.2.
+P (byf (θ, X, υ)) ≤ 0) ≤ P
+ X
+r
+S11 + S21
+S12 + S22
+
+V (t)
++r,by + V (t)
+−r,by
+
+≤ V (t)
+ξ,ir,(−by) + o(1)
+!
+(37)
+In the following formulas, in the first inequality, because the signal memory in the benign overfitting stage is much higher
+than the noise memory, we have S11 + S21 > S 12 + S22. Then, by substituting (16), (17), (18) and (31), we obtain the
+second and third inequalities. For the last inequality, we use the Taylor formula expansion of log(1 + x). When x > 1, the
+x2 dominates the expansion.
+P
+r
+S11+S21
+S12+S22
+
+V (t)
++r,ˆy + V (t)
+−,ˆy
+
+σp
+Pmv
+r=1
+W (t)
+−ˆy,rυ
+
+2
+⩾
+P
+r
+
+V (t)
++r,ˆy + V (t)
+−rr,ˆy
+
+O(σpσv
+√
+d ∥υ∥2 + σp
+ε∥µ∥2
+)
+⩾ O[log(exp(V (T2)
++ ) + ηc10 · ∥µ∥2
+2 ∥υ∥2
+2 (t − T2)) − 2 log(O(1/ε))]
+O(σpσv
+√
+d ∥υ∥2 + σp
+ε∥µ∥2
+)
+⩾ O(log(c11 + 1 + ηc10 · ∥µ∥2 ∥υ∥2 (t − T2))
+O(σpσv
+√
+d ∥υ∥2 + σp
+ε∥µ∥2
+)
+⩾ O[ηc10 ∥µ∥2 ∥υ∥2 (t − T2) − 1
+2 η2(c1)2 ∥µ∥4 ∥υ∥4 (t − T2)2]
+O(σpσv
+√
+d ∥υ∥2 + σp
+ε∥µ∥2
+)
+≈ O(η2 ∥µ∥4 ∥υ∥4 (t − T2)2)
+O(σpσv
+√
+d ∥υ∥2)
+≈ O
+ 
+η2 ∥υ∥3 (t − T2)2 ∥µ∥3
+σv
+· SNR
+!
+(38)
+By plugging (38) into (37), we can get :
+P (by(f(θ, X, υ) ≤ 0) ≤ exp(c12/2π) exp
+
+− c13
+2
+
+
+P
+r
+s11+s21
+s12+s22
+
+V (t)
++r,ˆy + V (t)
+−r,ˆy
+
+σp
+Pm
+r=1
+W (t)
+−ˆy,rυ
+
+
+
+2
+
+≤ exp(c12/2π) exp
+"
+− c13
+2 O
+ 
+η4 ∥υ∥6 (t − T2)4 ∥µ∥6 · SNR2
+σ2v
+!#
+≤ exp
+ 
+c12
+2π − c14η4(t − T2)4 ∥µ∥6 · SNR2
+2σ2v
+!
+E. Test Loss of Harmful Overfitting
+E.1. Stage I Test Loss
+Theorem E.1 ((First part of Theorem 4.3)). Under the same conditions as Theorem 4.3, when N −1 · SNR−2 = Ω(1),
+there exists T1 = 56N
+η 1
+4 σ2pd∥υ∥2
+2
+, for t ∈ (0, T1], such that the test error is:
+LD(W(t)) ≤ α + O(1) (39)
+18
+
+Understanding Generalization in Transformers
+Proof.The proof is the same as in the first stage of benign overfitting (Theorem D.1).
+E.2. Stage II Test Loss
+Theorem E.2 ((Second part of Theorem 4.3). Under the same conditions as Theorem 4.3, when N −1 · SNR−2 = Ω(1),
+there exists T2 = Θ
+
+N
+ησ 2pd∥υ∥2
+2 log(6N 2M 2/δ)
+
+. For t ∈ (T1, T2], the test error is:
+LD(W(t)) ≤
+1
+2 − α
+
+O
+ 
+d
+1
+4 (log N 2)3(1 + η(t − T1))
+mv∥µ∥2∥υ∥2 + ηd∥υ∥2(t − T1)
+N
+!
+Proof. we bound f(θ, X, υ) as follows.
+f(θ, X, υ) = 1
+mv
+X
+r∈[mv]
+ 
+υT x1(S11 + S21)WV j,r + υT x2(S12 + S22)WV j,r
+
+≈ 1
+mv
+· exp(⟨q(t)
++ , k(t)
++ ⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩) + exp(⟨q(t)
++ , k(t)
+ξ,i⟩)
+· V (t)
++
++ 1
+mv
+·
+exp(⟨q(t)
+ξ,i, k(t)
++ ⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩) + exp(⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩)
+· V (t)
++
++ 1
+mv
+· exp(⟨q(t)
+− , k(t)
+− ⟩)
+exp(⟨q(t)
+− , k(t)
+− ⟩) + exp(⟨q(t)
+− , k(t)
+ξ,i⟩)
+· V (t)
+−
++ 1
+mv
+·
+exp(⟨q(t)
+ξ,i, k(t)
++ ⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩) + exp(⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩)
+· V (t)
+−
++ 1
+mv
+·
+exp(⟨q(t)
++ , k(t)
+ξ,i⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩) + exp(⟨q(t)
++ , k(t)
+ξ,i′⟩)
+· V (t)
+ξ,i
++ 1
+mv
+·
+exp(⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩)
+exp(⟨q(t)
+ξ,i, k(t)
++ ⟩) + exp(⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩)
+· V (t)
+ξ,i
+To simplify the analysis, let’s define:
+A = 1
+mv
+· exp(⟨q(t)
++ , k(t)
++ ⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩) + exp(⟨q(t)
++ , k(t)
+ξ,i⟩)
+· V (t)
++
+B = 1
+mv
+· exp(⟨q(t)
++ , k(t)
++ ⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩) + exp(⟨q(t)
++ , k(t)
+ξ,i⟩)
+· V (t)
++
+C = 1
+mv
+· exp(⟨q(t)
+− , k(t)
+− ⟩)
+exp(⟨q(t)
+− , k(t)
+− ⟩) + exp(⟨q(t)
+− , k(t)
+ξ,i⟩)
+· V (t)
+−
+D = 1
+mv
+·
+exp(⟨q(t)
+ξ,i, k(t)
++ ⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩) + exp(⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩)
+· V (t)
+−
+E = 1
+mv
+·
+exp(⟨q(t)
++ , k(t)
+ξ,i⟩)
+exp(⟨q(t)
++ , k(t)
++ ⟩) + exp(⟨q(t)
++ , k(t)
+ξ,i′⟩)
+· V (t)
+ξ,i
+F = 1
+mv
+·
+exp(⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩)
+exp(⟨q(t)
+ξ,i, k(t)
++ ⟩) + exp(⟨q(t)
+ξ,i, k(t)
+ξ,i′⟩)
+· V (t)
+ξ,i
+f(θ, x, υ) = A + B + C + D + E + F
+19
+
+Understanding Generalization in Transformers
+|f(θ, x, υ)| ≤ | A| + |B| + |C| + |D| + |E| + |F |
+By plugging (20)–(26) into the above definition, the following inequality holds:
+|A| ≤ 1
+mv
+O
+ 
+σ2
+pd(log(24N 2/δ))3
+∥µ∥2
+2∥v∥2
+2d
+1
+2
+!
+ 
+O(d− 1
+4 ) + ηc15σ2
+pd∥v∥2
+2(t − T1)
+N
+!
+= 1
+mv
+ 
+O
+ 
+σ2
+pd
+1
+4 (log(24N 2/δ))3
+∥µ∥2
+2∥v∥2
+2
+!
++ O
+ 
+ηc15σ4
+pd
+3
+2 (log(24N 2/δ))3(t − T1)
+∥µ∥2
+2N ∥v∥2
+2
+!!
+|B| ≤ 1
+mv
+ 
+1 − O
+ 
+σ2
+pd(log(24N 2/δ))3
+∥µ∥2
+2∥v∥2
+2d
+1
+2
+!! 
+O(d− 1
+4 ) + ηc15σ2
+pd∥v∥2
+2(t − T1)
+N
+!
+≈ 1
+mv
+ 
+O(d− 1
+4 ) + ηc15σ2
+pd∥v∥2
+2(t − T1)
+N
+!
+|C| ≤ 1
+mv
+ 
+O
+ 
+σ2
+pd
+1
+4 (log(24N 2/δ))3
+∥µ∥2
+2∥v∥2
+2
+!
++ O
+ 
+ηc15σ4
+pd
+3
+2 (log(24N 2/δ))3(t − T1)
+∥µ∥2
+2N ∥v∥2
+2
+!!
+|D| ≤ 1
+mv
+ 
+O(d− 1
+4 ) + ηc15σ2
+pd∥v∥2
+2(t − T1)
+N
+!
+|E| ≤ 1
+mv
+O
+ 
+(log(24N 2/δ))3
+∥v∥2
+2d
+1
+2
+!
+ηc14σ2
+pd∥v∥2
+2(t − T1)
+N
+= 1
+mv
+O
+ 
+ηc14σ2
+pd
+1
+2 (log(24N 2/δ))3(t − T1)
+N
+!
+|F | ≤ 1
+mv
+ 
+1 − O
+ 
+(log(24N 2/δ))3
+∥v∥2
+2d
+1
+2
+!!
+ηc14σ2
+pd∥v∥2
+2(t − T1)
+N
+≈ 1
+mv
+ηc14σ2
+pd∥v∥2
+2(t − T1)
+N
+Calculate the sum of the absolute values presented above, we can get:
+f(θ, X, υ) ≤ 1
+mv
+ 
+2O
+ 
+σ2
+pd
+1
+4 (log(24N 2/δ))3
+∥µ∥2
+2∥v∥2
+2
+!
++ 2O
+ 
+ηc15σ4
+pd
+3
+2 (log(24N 2/δ))3(t − T1)
+∥µ∥2
+2N ∥v∥2
+2
+!
++ 2O(d− 1
+4 )
++2 ηc15σ2
+pd∥v∥2
+2(t − T1)
+N + O
+ 
+ηc14σ2
+pd
+1
+2 (log(24N 2/δ))3(t − T1)
+N
+!
++ ηc14σ2
+pd∥v∥2
+2(t − T1)
+N
+!
+≤ O
+ 
+d
+1
+4 (log(N 2/δ))3
+mv∥µ∥2
+2∥v∥2
+2
+!
++ O
+
+ηd
+1
+4 (log(N 2/δ))3(t − T1)
+ 1
+mv∥µ∥2
+2N ∥v∥2
+2
++ 1
+N
+
++ O
+ ηd∥v∥2
+2(t − T1)
+N
+
+(40)
+According the full expectation formula, the test loss is split into two parts: label not flipped and label flipped respectively,
+and the sum is obtained as follows:
+LD(W(t)) = Eℓ[y · f(θ, X, υ)]
+= (1 − α)Eℓ(yf (θ, X, υ)) + αEℓ(−yf (θ, X, υ)) (41)
+E[y] = p(y = 1) × 1 + α(y = −1) × (−1)
+= [p(ˆy = 1) × (1 − α) + p(ˆy = −1) × α] × 1 + [p(ˆy = 1) × α + p(ˆy = −1) × (1 − α)] × (−1)
+= [p0 × (1 − α) + p0 × α] × 1 + [p0 × α + p0 × (1 − α)] × (−1)
+= α − αp0 + p0 − αp0
+= α + p0 − 2αp0 (42)
+20
+
+Understanding Generalization in Transformers
+The above formula E[y] is derived from the full expectation formula, and p0 is the probability that the real labelby outputs 1
+when it is not flipped. By plugging (40) into (41), we can get:
+LD(W(t)) = (1 − 2α)E[yf (θ, X, v)]
+≤ (1 − 2α)E
+"
+y ·
+ 
+O
+ 
+d
+1
+2 (log(N 2/δ))3
+mv∥µ∥2
+2∥v∥2
+2
+!
++O
+
+ηd
+1
+2 (log(N 2/δ))3(t − T1)
+ 1
+mv∥µ∥2
+2N ∥v∥2
+2
++ 1
+N
+
++ O
+ ηd∥ v∥2
+2(t − T1)
+N
+
+= (1 − 2α)
+ 
+E
+"
+y · O
+ 
+d
+1
+2 (log(N 2/δ))3
+mv∥µ∥2
+2∥v∥2
+2
+!#
++E
+
+y · O
+
+ηd
+1
+2 (log(N 2/δ))3(t − T1)
+ 1
+mv∥µ∥2
+2N ∥v∥2
+2
++ 1
+N
+
++ E
+
+y · O
+ ηd∥ v∥2
+2(t − T1)
+N
+
+= (1 − 2α)
+ 
+O
+ 
+d
+1
+2 (log(N 2/δ))3
+mv∥µ∥2
+2∥v∥2
+2
+!
+E[y]
++O
+
+ηd
+1
+2 (log(N 2/δ))3(t − T1)
+ 1
+mv∥µ∥2
+2N ∥v∥2
+2
++ 1
+N
+
+E[y] + O
+ ηd∥ v∥2
+2(t − T1)
+N
+
+E[y]
+
+(43)
+Substitute p0 = 1
+2 into E[y], we can get
+LD(W(t)) = (1 − 2α)
+ 
+1
+2 O
+ 
+d
+1
+2 (log(N 2/δ))3
+mv∥µ∥2
+2∥v∥2
+2
+!
++1
+2 O
+
+ηd
+1
+2 (log(N 2/δ))3(t − T1)
+ 1
+mv∥µ∥2
+2N ∥v∥2
+2
++ 1
+N
+
++ 1
+2 O
+ ηd∥ v∥2
+2(t − T1)
+N
+
+= (1
+2 − α)
+ 
+O
+ 
+d
+1
+2 (log(N 2/δ))3
+mv∥µ∥2
+2∥v∥2
+2
+!
++O
+
+ηd
+1
+2 (log(N 2/δ))3(t − T1)
+ 1
+mv∥µ∥2
+2N ∥v∥2
+2
++ 1
+N
+
++ O
+ ηd∥ v∥2
+2(t − T1)
+N
+
+(44)
+E.3. Stage III Test Loss
+Theorem E.3 ((Third part of Theorem 4.3). Under the same conditions as Theorem 4.3, when N −1 · SNR−2 = Ω(1),
+here exists T3 = Θ
+
+N
+ηϵσ 2pd∥υ∥2
+2
+
+, t ∈ (T2, T3] such that:
+LD(W(t)) ≥ (1 − α) · log
+ 
+1 + 2e
+1
+2
+1 + e
+1
+2
+!
++ α log
+
+2 + e− 1
+2
+
+Proof. According to (27) and (29), the test error is divided into two parts from (41). Firstly, let us analyze the first
+case when the label is not flipped. Let z = byf (θ, X, υ). Since t ∈ (T2, T3], we have byf (θ, x, υ) ≥ log(1 + e− 1
+2 ) and
+ℓ(z) = log(1 + exp(−z)). Then we can get
+(1 − α)Ey∈byℓ(byf (θ, X, υ)) ≤ (1 − α)ℓ(byf (θ, x, υ))
+= (1 − α) log (1 + exp(−byf (θ, X, υ)))
+≤ (1 − α) log
+ 
+1 + e
+1
+2
+1 + e
+1
+2
+!
+= (1 − α) log
+ 
+1 + 2e
+1
+2
+1 + e
+1
+2
+!
+21
+
+Understanding Generalization in Transformers
+(a) Dynamic loss analysis of N.
+ (b) Dynamic loss analysis of α.
+(c) Dynamic loss analysis of µ.
+ (d) Dynamic loss analysis of σ.
+Figure 7. This figure is a study of individual variables in 2 and 2, where (a) explores the impact of changes in N and SNR on test loss, (b)
+investigates the impact of α. on test loss, and (c) and (d) are components of SNR. We further investigate the values of µ and σ to analyze
+the changes in loss
+Secondly, let’s analyze the second case. When the label is flipped:
+ℓ(−byf (θ, X, υ)) = log(1 + exp(byf (θ, X, υ)))
+≥ log
+
+1 + (1 +e−1/2)
+
+= log
+
+2 + e−1/2
+
+αEy∈−byℓ(−byf (θ, X, υ)) ≥ α log
+
+2 + e−1/2
+
+The proof can be completed by adding the results of the first and second cases.
+F. More Experiment Details on Training Dynamics
+1. Sample size N: Figure 7 (a) shows that the overall test loss decreases with the change of N. However, from theSNR
+curves representing different values, it can be observed that the number of changes in N has little effect on the loss
+under lower signal-to-noise ratio conditions, and a significant decrease only occurs when the signal-to-noise ratio is
+22
+
+Understanding Generalization in Transformers
+increased. This indicates that there is not a certain relationship between the influence of n and SNR. As we obtained in
+the theoretical part N · SNR2 = Ω(1)
+2. Label flipping α : Label inversion means changing the label of the original signal, and in binary classification tasks, it
+means taking the opposite number of labels. We tried different probabilities in the experiment, and the specific results
+are shown in the Figure 7 (b).
+3. signal-to-noise ratio ( SNR ): The previous experiment proved that as SNR increases, the loss will show a decreasing
+trend. Here, we further explore the factors that affect SNR and their impact on the loss. SNR is determined by
+both the signal norm and the noise variance. We conducted experiments on µ and σ while keeping other variables
+unchanged.The experimental results are shown in the figure. Figure 7(c), it can be seen that the test loss increases
+with the increase of signal strength, while in 7(d), it can be seen that the test loss decreases with the increase of noise
+variance. This result is exactly the same as our definition of SNR.
+23
