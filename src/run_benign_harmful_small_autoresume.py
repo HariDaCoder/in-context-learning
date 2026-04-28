@@ -20,9 +20,8 @@ def _get_out_dir_from_config(config_path):
     return out_dir
 
 
-def _resolve_out_root(config_path, config_out_dir):
-    base_dir = os.path.dirname(config_path)
-    return os.path.abspath(os.path.join(base_dir, config_out_dir))
+def _resolve_out_root(repo_root, config_out_dir):
+    return os.path.normpath(os.path.abspath(os.path.join(repo_root, config_out_dir)))
 
 
 def _find_latest_run_id(out_root):
@@ -61,6 +60,41 @@ def _build_noise_list(start, end, step):
     return values
 
 
+def _make_noise_config(base_config_path, repo_root, run_id, noise_std):
+    base_conf = _load_yaml(base_config_path)
+
+    training = dict(base_conf.get("training", {}))
+    task_kwargs = dict(training.get("task_kwargs", {}))
+    task_kwargs["noise_std"] = float(noise_std)
+    training["task_kwargs"] = task_kwargs
+    training["resume_id"] = run_id
+
+    out_dir = base_conf.get("out_dir")
+    if not out_dir:
+        raise ValueError(f"Missing out_dir in config: {base_config_path}")
+    resolved_out_dir = os.path.abspath(os.path.join(repo_root, out_dir))
+
+    base_name = os.path.basename(base_config_path)
+    base_stem, _ = os.path.splitext(base_name)
+    noise_tag = _format_noise_tag(noise_std)
+    temp_name = f"{base_stem}_autogen_std{noise_tag}.yaml"
+    temp_path = os.path.join(os.path.dirname(base_config_path), temp_name)
+
+    temp_conf = {
+        "inherit": [base_name],
+        "out_dir": resolved_out_dir,
+        "training": {
+            "resume_id": training["resume_id"],
+            "task_kwargs": training["task_kwargs"],
+        },
+    }
+
+    with open(temp_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(temp_conf, f, sort_keys=False)
+
+    return temp_path
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Auto-resume trainer for benign/harmful dynamics using small model."
@@ -68,7 +102,7 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        default="src/conf/benign_harmful_dynamics_small.yaml",
+        default="src/conf/benign_harmful_dynamics_no_curriculum.yaml",
         help="Training config path.",
     )
     parser.add_argument("--noise_start", type=float, default=0.5)
@@ -102,7 +136,7 @@ def main():
     config_path = os.path.abspath(os.path.join(repo_root, args.config))
 
     config_out_dir = _get_out_dir_from_config(config_path)
-    out_root = _resolve_out_root(config_path, config_out_dir)
+    out_root = _resolve_out_root(repo_root, config_out_dir)
     os.makedirs(out_root, exist_ok=True)
 
     noise_values = _build_noise_list(args.noise_start, args.noise_end, args.noise_step)
@@ -111,18 +145,16 @@ def main():
     for noise_std in noise_values:
         noise_tag = _format_noise_tag(noise_std)
         run_id = f"{args.run_id_prefix}_std{noise_tag}"
+        noise_config_path = _make_noise_config(config_path, repo_root, run_id, noise_std)
         print(f"[INFO] ===== Noise std={noise_std} | run_id={run_id} =====")
+        print(f"[INFO] Using config: {noise_config_path}")
 
         for attempt in range(1, args.max_retries + 1):
             train_cmd = [
                 sys.executable,
                 os.path.join("src", "train.py"),
                 "--config",
-                args.config,
-                "--training.resume_id",
-                run_id,
-                "--training.task_kwargs.noise_std",
-                str(noise_std),
+                noise_config_path,
             ]
 
             print(f"[INFO] Attempt {attempt}/{args.max_retries}")
@@ -144,7 +176,11 @@ def main():
             )
 
         if args.plot_after_success:
-            run_path = os.path.join(out_root, run_id)
+            run_path = os.path.normpath(os.path.join(out_root, run_id))
+            if not os.path.isdir(run_path):
+                print(f"[WARN] Skipping plot because run_path does not exist: {run_path}")
+                continue
+
             plot_cmd = [
                 sys.executable,
                 os.path.join("src", "plot_benign_harmful_dynamics.py"),
@@ -153,6 +189,7 @@ def main():
                 "--ood_noise_scales",
                 str(noise_std),
                 "--use_absolute_noise_std",
+                "--skip_id_profile",
                 "--step_stride",
                 str(args.plot_step_stride),
                 "--num_eval_examples",
@@ -161,7 +198,20 @@ def main():
                 f"{args.plot_prefix}_std{noise_tag}",
             ]
             print("[INFO] Plot command:", " ".join(plot_cmd))
-            subprocess.run(plot_cmd, cwd=repo_root, check=True)
+            try:
+                result = subprocess.run(plot_cmd, cwd=repo_root, check=False)
+            except Exception as exc:
+                print(
+                    f"[WARN] Plot crashed for noise_std={noise_std}: {exc}. "
+                    "Continuing to next noise level."
+                )
+                continue
+
+            if result.returncode != 0:
+                print(
+                    f"[WARN] Plot failed for noise_std={noise_std} with code {result.returncode}. "
+                    "Continuing to next noise level."
+                )
 
 
 if __name__ == "__main__":

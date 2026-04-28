@@ -1,0 +1,19 @@
+inherit:
+  - benign_harmful_dynamics_small.yaml
+
+training:
+  curriculum:
+    dims:
+      start: 20
+      end: 20
+      inc: 1
+      interval: 2000
+    points:
+      start: 41
+      end: 41
+      inc: 2
+      interval: 2000
+  log_every_steps: 100
+  train_steps: 500001
+
+out_dir: D:\Henry-Projects\ChestXray\data\in-context-learning\models\benign_harmful_dynamics_small

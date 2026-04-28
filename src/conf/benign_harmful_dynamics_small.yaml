@@ -27,9 +27,10 @@ training:
   train_steps: 100001
   resume_id: null
 
-out_dir: ../models/benign_harmful_dynamics_small
+out_dir: D:\Henry-Projects\ChestXray\data\in-context-learning\models\benign_harmful_dynamics_small
 
 wandb:
+  entity: hai-trinh220970-ho-chi-minh-city-university-of-technology
   project: in-context-training
   name: benign-harmful-dynamics-small
   notes: Train small model on ID and evaluate train/test loss dynamics across OOD noise scales.

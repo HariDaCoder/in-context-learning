@@ -125,7 +125,7 @@ def build_benign_harmful_dynamics_evals(
         "task_sampler_kwargs": cleaned_task_kwargs,
     }
 
-    evals = {"id": base_kwargs.copy()}
+    evals = {"id_matched": base_kwargs.copy()}
     base_noise_std = float(cleaned_task_kwargs.get("noise_std", 0.0))
 
     for scale in ood_noise_scales:

@@ -69,6 +69,23 @@ def _load_wandb_series(run_ref, metric_name="overall_loss"):
     return steps, values
 
 
+def _load_train_loss_file(run_path):
+    """Load train loss history from train_losses.json file."""
+    loss_file = os.path.join(run_path, "train_losses.json")
+    if not os.path.exists(loss_file):
+        return None, None
+    
+    try:
+        with open(loss_file, "r") as f:
+            loss_dict = json.load(f)
+        steps = sorted([int(k) for k in loss_dict.keys()])
+        values = [float(loss_dict[str(s)]) for s in steps]
+        return steps, values
+    except Exception as e:
+        print(f"[WARN] Failed to load train_losses.json: {e}")
+        return None, None
+
+
 def _extract_loss_scalar(metric_dict, reduction):
     means = metric_dict["mean"]
     if reduction == "last":
@@ -112,36 +129,10 @@ def _filter_steps(steps, min_step=None, max_step=None, step_stride=None):
     return filtered
 
 
-def _detect_harmful_onset(steps, id_losses, ood_losses, rel_threshold, abs_threshold):
-    if not steps:
-        return {"best_step": None, "harmful_onset_step": None}
-
-    best_idx = min(range(len(ood_losses)), key=lambda idx: ood_losses[idx])
-    best_step = int(steps[best_idx])
-    best_ood = float(ood_losses[best_idx])
-    id_at_best = float(id_losses[best_idx])
-
-    harmful_step = None
-    for i in range(best_idx + 1, len(steps)):
-        ood_now = float(ood_losses[i])
-        id_now = float(id_losses[i])
-
-        rel_increase = ood_now >= best_ood * (1.0 + rel_threshold)
-        abs_increase = (ood_now - best_ood) >= abs_threshold
-        id_not_worse = id_now <= id_at_best + abs_threshold
-
-        if (rel_increase or abs_increase) and id_not_worse:
-            harmful_step = int(steps[i])
-            break
-
-    return {
-        "best_step": best_step,
-        "harmful_onset_step": harmful_step,
-        "best_ood_loss": best_ood,
-    }
+# Harmful-onset detection removed: we only plot train/test losses now.
 
 
-def _plot_series(steps, series, transitions, output_path, reduction, train_series=None):
+def _plot_series(steps, series, output_path, reduction, train_series=None):
     if plt is None:
         raise ImportError(
             "Missing dependency: matplotlib. Please install matplotlib in your environment."
@@ -149,13 +140,19 @@ def _plot_series(steps, series, transitions, output_path, reduction, train_serie
 
     fig, ax = plt.subplots(figsize=(11, 6.5))
 
-    if "id" not in series:
-        raise ValueError("ID series is required to plot dynamics.")
+    # Handle both old "id" and new "id_matched" naming
+    id_key = None
+    if "id_matched" in series:
+        id_key = "id_matched"
+    elif "id" in series:
+        id_key = "id"
+    else:
+        raise ValueError("ID series (id_matched or id) is required to plot dynamics.")
 
     color_map = {}
     palette = plt.get_cmap("tab10")
 
-    ax.plot(steps, series["id"], marker="o", linewidth=2.8, color="black", label="ID")
+    ax.plot(steps, series[id_key], marker="o", linewidth=2.8, color="black", label="test_loss")
 
     if train_series is not None:
         train_steps, train_losses = train_series
@@ -165,59 +162,16 @@ def _plot_series(steps, series, transitions, output_path, reduction, train_serie
             linestyle="--",
             linewidth=2.2,
             color="dimgray",
-            label="train loss (wandb)",
+            label="train_loss",
         )
 
-    ood_names = [name for name in series if name != "id"]
+    ood_names = [name for name in series if name not in ("id", "id_matched")]
     for idx, name in enumerate(ood_names):
         color = palette(idx % 10)
         color_map[name] = color
         ax.plot(steps, series[name], marker="o", linewidth=2, color=color, label=name)
 
-        best_step = transitions.get(name, {}).get("best_step")
-        harmful_step = transitions.get(name, {}).get("harmful_onset_step")
-
-        if best_step is not None and best_step in steps:
-            best_idx = steps.index(best_step)
-            ax.scatter(
-                [best_step],
-                [series[name][best_idx]],
-                color=color,
-                edgecolors="white",
-                linewidths=0.9,
-                s=70,
-                zorder=5,
-            )
-
-        if harmful_step is not None and harmful_step in steps:
-            harm_idx = steps.index(harmful_step)
-            ax.scatter(
-                [harmful_step],
-                [series[name][harm_idx]],
-                color=color,
-                marker="x",
-                s=80,
-                linewidths=2,
-                zorder=6,
-            )
-
-    harmful_steps = [
-        info.get("harmful_onset_step")
-        for info in transitions.values()
-        if info.get("harmful_onset_step") is not None
-    ]
-    if harmful_steps:
-        earliest_harm = min(harmful_steps)
-        ax.axvline(earliest_harm, color="red", linestyle="--", alpha=0.55)
-        ax.text(
-            earliest_harm,
-            ax.get_ylim()[1],
-            " harmful onset",
-            color="red",
-            fontsize=9,
-            va="top",
-            ha="left",
-        )
+    # No harmful-onset vertical markers: simplified plot shows only train/test/ood losses.
 
     ax.set_title("ICL Benign/Harmful Training Dynamics")
     ax.set_xlabel("Training step")
@@ -379,6 +333,11 @@ def main():
     )
     parser.add_argument("--out_dir", type=str, default=None)
     parser.add_argument("--prefix", type=str, default="benign_harmful_dynamics")
+    parser.add_argument(
+        "--skip_id_profile",
+        action="store_true",
+        help="Skip in-distribution (ID) baseline; eval only OOD noise scales for matched train/test setup.",
+    )
 
     args = parser.parse_args()
 
@@ -407,6 +366,22 @@ def main():
         nonstation_data_kwargs=nonstation_kwargs,
         use_noise_multipliers=use_noise_multipliers,
     )
+
+    if args.skip_id_profile:
+        if "id_matched" in eval_profile:
+            del eval_profile["id_matched"]
+            print("[INFO] Skipping ID profile; using only OOD noise scales for matched train/test setup.")
+        elif "id" in eval_profile:
+            del eval_profile["id"]
+            print("[INFO] Skipping ID profile; using only OOD noise scales for matched train/test setup.")
+
+    # If skip_id_profile removed the ID but only a single eval remains,
+    # remap that single eval to `id_matched` so plotting still shows a single
+    # test_loss line (instead of failing because `id`/`id_matched` is missing).
+    if not any(k in eval_profile for k in ("id", "id_matched")) and len(eval_profile) == 1:
+        only_name = list(eval_profile.keys())[0]
+        eval_profile["id_matched"] = eval_profile.pop(only_name)
+        print(f"[INFO] Remapped single eval profile '{only_name}' to 'id_matched' for plotting as test_loss.")
 
     saved_steps, final_step, candidate_steps = _discover_checkpoints(args.run_path)
     if not candidate_steps:
@@ -440,6 +415,12 @@ def main():
         print(
             f"[INFO] Loaded W&B train series: {len(wandb_train_series[0])} points from {args.wandb_run}"
         )
+    else:
+        # Try to load train loss from local file instead
+        file_train_series = _load_train_loss_file(args.run_path)
+        if file_train_series[0] is not None:
+            wandb_train_series = file_train_series
+            print(f"[INFO] Loaded local train loss file: {len(wandb_train_series[0])} points")
 
     series = {name: [] for name in eval_profile.keys()}
 
@@ -469,16 +450,7 @@ def main():
 
     id_losses = series.get("id", [])
     transitions = {}
-    for eval_name, losses in series.items():
-        if eval_name == "id":
-            continue
-        transitions[eval_name] = _detect_harmful_onset(
-            eval_steps,
-            id_losses,
-            losses,
-            rel_threshold=args.harmful_rel_threshold,
-            abs_threshold=args.harmful_abs_threshold,
-        )
+    # We no longer compute harmful-onset; only collect series for plotting.
 
     out_dir = args.out_dir or os.path.join(args.run_path, "dynamics")
     os.makedirs(out_dir, exist_ok=True)
@@ -491,7 +463,6 @@ def main():
         "steps": eval_steps,
         "reduction": args.reduction,
         "series": series,
-        "transitions": transitions,
         "eval_profile": eval_profile,
         "num_eval_examples": args.num_eval_examples,
         "batch_size": batch_size,
@@ -500,7 +471,7 @@ def main():
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 
-    _plot_series(eval_steps, series, transitions, png_path, args.reduction, train_series=wandb_train_series)
+    _plot_series(eval_steps, series, png_path, args.reduction, train_series=wandb_train_series)
 
     if args.fixed_steps_for_noise_plot:
         x_label = "Noise scale (multiplier)" if use_noise_multipliers else "Noise std"
@@ -530,12 +501,7 @@ def main():
 
     print(f"[DONE] Saved metrics JSON: {json_path}")
     print(f"[DONE] Saved plot PNG: {png_path}")
-    print("[DONE] Transition summary:")
-    for name, info in transitions.items():
-        print(
-            f"  - {name}: best_step={info.get('best_step')}, "
-            f"harmful_onset_step={info.get('harmful_onset_step')}"
-        )
+    # Done.
 
 
 if __name__ == "__main__":

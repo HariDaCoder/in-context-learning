@@ -1,6 +1,7 @@
 import os
 from random import randint
 import uuid
+import json
 
 from quinine import QuinineArgumentParser
 from tqdm import tqdm
@@ -107,6 +108,14 @@ def train(model, args):
 
     starting_step = 0
     state_path = os.path.join(args.out_dir, "state.pt")
+    train_loss_path = os.path.join(args.out_dir, "train_losses.json")
+    
+    # Load existing train losses if resuming
+    train_losses = {}
+    if os.path.exists(train_loss_path):
+        with open(train_loss_path, "r") as f:
+            train_losses = json.load(f)
+    
     if os.path.exists(state_path):
         state = torch.load(state_path)
         model.load_state_dict(state["model_state_dict"])
@@ -181,6 +190,10 @@ def train(model, args):
                 },
                 step=i,
             )
+            # Save train loss to file for local access
+            train_losses[str(i)] = float(loss)
+            with open(train_loss_path, "w") as f:
+                json.dump(train_losses, f)
 
         curriculum.update()
 
