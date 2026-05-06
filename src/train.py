@@ -57,6 +57,7 @@ def _sanitize_training_kwargs(args):
         "ar2": {"ar1_coef", "ar2_coef", "noise_std", "bias", "scale"},
         "vr2": {"ar1_mat", "ar2_mat", "noise_std", "bias", "scale"},
         "nonstation": {"coef_base", "coef_amplitude", "noise_std", "bias", "scale"},
+        "markov": {"transition_matrix", "A", "A_seq", "noise_std", "initial_std", "bias", "scale"},
         "exponential": {"bias", "scale", "rate"},
         "laplace": {"bias", "scale", "loc", "laplace_scale"},
         "gamma": {"bias", "scale", "concentration", "rate"},
@@ -79,6 +80,7 @@ def _sanitize_training_kwargs(args):
         "relu_2nn_regression": {"scale", "hidden_layer_size"},
         "decision_tree": {"depth"},
         "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform", "w_distribution", "w_kwargs"},
+        "markov_noisy_linear_regression": {"scale", "noise_std", "uniform", "w"},
         "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
         "uniform_hypersphere_regression": {"scale"},
         "wlaplace_noisypoisson": {"scale", "weight_scale", "poisson_rate"},
@@ -102,6 +104,28 @@ def _sanitize_training_kwargs(args):
     args.training.task_kwargs = task_kwargs
 
 
+def _load_train_losses(train_loss_path):
+    if not os.path.exists(train_loss_path):
+        return {}
+
+    try:
+        with open(train_loss_path, "r", encoding="utf-8") as file_handle:
+            return json.load(file_handle)
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        print(
+            f"[WARN] Could not load existing train loss cache at {train_loss_path}: {exc}. "
+            "Starting a fresh cache for this run."
+        )
+        return {}
+
+
+def _save_train_losses(train_loss_path, train_losses):
+    temp_path = f"{train_loss_path}.tmp"
+    with open(temp_path, "w", encoding="utf-8") as file_handle:
+        json.dump(train_losses, file_handle)
+    os.replace(temp_path, train_loss_path)
+
+
 def train(model, args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.training.learning_rate)
     curriculum = Curriculum(args.training.curriculum)
@@ -109,12 +133,8 @@ def train(model, args):
     starting_step = 0
     state_path = os.path.join(args.out_dir, "state.pt")
     train_loss_path = os.path.join(args.out_dir, "train_losses.json")
-    
-    # Load existing train losses if resuming
-    train_losses = {}
-    if os.path.exists(train_loss_path):
-        with open(train_loss_path, "r") as f:
-            train_losses = json.load(f)
+
+    train_losses = _load_train_losses(train_loss_path)
     
     if os.path.exists(state_path):
         state = torch.load(state_path)
@@ -190,10 +210,8 @@ def train(model, args):
                 },
                 step=i,
             )
-            # Save train loss to file for local access
             train_losses[str(i)] = float(loss)
-            with open(train_loss_path, "w") as f:
-                json.dump(train_losses, f)
+            _save_train_losses(train_loss_path, train_losses)
 
         curriculum.update()
 

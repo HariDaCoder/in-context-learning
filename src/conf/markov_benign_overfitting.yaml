@@ -1,0 +1,31 @@
+out_dir: ../models/markov_benign_overfitting
+
+seed: 0
+device: auto
+
+T: 200
+d: 50
+train_T: 150
+num_trials: 64
+
+sigma_x: 1.0
+sigma_y: 0.1
+
+stationary_scales:
+  - 0.0
+  - 0.3
+  - 0.6
+  - 0.9
+
+sigma_x_values:
+  - 0.1
+  - 0.5
+  - 1.0
+  - 2.0
+
+sigma_y_values:
+  - 0.0
+  - 0.01
+  - 0.1
+  - 0.5
+  - 1.0

@@ -1,0 +1,18 @@
+mode: dynamics
+out_dir: ../models/markov_benign_overfitting_dynamics
+
+seed: 0
+device: auto
+
+T: 200
+d: 50
+train_T: 150
+num_trials: 64
+
+sigma_x: 1.0
+sigma_y: 0.1
+markov_scale: 0.6
+
+train_steps: 2000
+log_every_steps: 50
+learning_rate: 0.01

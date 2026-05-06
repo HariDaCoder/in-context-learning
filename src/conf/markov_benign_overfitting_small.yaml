@@ -1,0 +1,21 @@
+inherit:
+  - benign_harmful_dynamics_small.yaml
+
+mode: dynamics
+out_dir: ../models/benign_harmful_dynamics_small/markov_benign_overfitting
+
+seed: 0
+device: auto
+
+T: 200
+d: 50
+train_T: 150
+num_trials: 64
+
+sigma_x: 1.0
+sigma_y: 0.1
+markov_scale: 0.6
+
+train_steps: 500001
+log_every_steps: 100
+learning_rate: 0.0001

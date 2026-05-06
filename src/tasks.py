@@ -62,6 +62,7 @@ def get_task_sampler(
         "sparse_linear_regression": SparseLinearRegression,
         "linear_classification": LinearClassification,
         "noisy_linear_regression": NoisyLinearRegression,
+        "markov_noisy_linear_regression": MarkovNoisyLinearRegression,
         "quadratic_regression": QuadraticRegression,
         "relu_2nn_regression": Relu2nnRegression,
         "decision_tree": DecisionTree,
@@ -393,6 +394,65 @@ class NoisyLinearRegression(LinearRegression):
             return mean_squared_error
         else:  # default l1
             return mean_absolute_error
+
+
+class MarkovNoisyLinearRegression(LinearRegression):
+    def __init__(
+        self,
+        n_dims,
+        batch_size,
+        pool_dict=None,
+        seeds=None,
+        scale=1,
+        noise_std=1.0,
+        uniform=False,
+        w=None,
+    ):
+        super(MarkovNoisyLinearRegression, self).__init__(
+            n_dims, batch_size, pool_dict, seeds, scale, uniform
+        )
+        self.noise_std = float(noise_std)
+
+        if w is not None:
+            w_tensor = torch.as_tensor(w, dtype=torch.float32)
+            if w_tensor.ndim == 1:
+                w_tensor = w_tensor.view(1, self.n_dims, 1).repeat(self.b_size, 1, 1)
+            elif w_tensor.ndim == 2:
+                if w_tensor.shape == (self.n_dims, 1):
+                    w_tensor = w_tensor.unsqueeze(0).repeat(self.b_size, 1, 1)
+                elif w_tensor.shape == (self.b_size, self.n_dims):
+                    w_tensor = w_tensor.unsqueeze(-1)
+                else:
+                    raise ValueError(
+                        "w must have shape (n_dims,), (n_dims, 1), or (batch_size, n_dims)"
+                    )
+            elif w_tensor.ndim == 3:
+                if w_tensor.shape != (self.b_size, self.n_dims, 1):
+                    raise ValueError(
+                        "w tensor must have shape (batch_size, n_dims, 1) when 3-D"
+                    )
+            else:
+                raise ValueError("Unsupported w shape for MarkovNoisyLinearRegression")
+
+            self.w_b = w_tensor.clone()
+
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_b = self.scale * (xs_b @ w_b)[:, :, 0]
+        ys_b = ys_b + self.noise_std * torch.randn_like(ys_b)
+        return ys_b
+
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, **kwargs):
+        return {"w": torch.randn(num_tasks, n_dims, 1)}
+
+    @staticmethod
+    def get_metric():
+        return mean_squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
 
 class HeteroskedasticNoisyLinearRegression(NoisyLinearRegression):
     def __init__(self, *args, alpha=1.0, **kwargs):

@@ -529,6 +529,95 @@ class NonStationarySampler(DataSampler):
         
         return xs_b
 
+
+class MarkovSampler(DataSampler):
+    """Generate x_t = A_t x_{t-1} + eta_t with Gaussian input noise."""
+
+    def __init__(self, n_dims, transition_matrix=None, noise_std=1.0, initial_std=1.0, bias=None, scale=None):
+        super().__init__(n_dims)
+        if transition_matrix is None:
+            transition_matrix = torch.zeros(n_dims, n_dims)
+
+        transition_matrix = torch.as_tensor(transition_matrix, dtype=torch.float32)
+        assert transition_matrix.shape == (n_dims, n_dims), "transition_matrix must be n_dims x n_dims"
+
+        self.transition_matrix = transition_matrix
+        self.noise_std = float(noise_std)
+        self.initial_std = float(initial_std)
+        self.bias = bias
+        self.scale = scale
+
+    def _resolve_transition(self, t, n_points, A=None, A_seq=None, device="cpu"):
+        if A_seq is not None:
+            if len(A_seq) != n_points:
+                raise ValueError("A_seq must have length n_points")
+            return torch.as_tensor(A_seq[t], dtype=torch.float32, device=device)
+
+        if A is not None:
+            return torch.as_tensor(A, dtype=torch.float32, device=device)
+
+        return self.transition_matrix.to(device)
+
+    def sample_xs(
+        self,
+        n_points,
+        b_size,
+        n_dims_truncated=None,
+        seeds=None,
+        device="cpu",
+        A=None,
+        A_seq=None,
+        sigma_x=None,
+        sigma_x_seq=None,
+        x0=None,
+    ):
+        xs_b = torch.zeros(b_size, n_points, self.n_dims, device=device)
+        generators = None
+        if seeds is not None:
+            assert len(seeds) == b_size
+            generators = [torch.Generator(device=device).manual_seed(int(seed)) for seed in seeds]
+
+        sigma_x = self.noise_std if sigma_x is None else float(sigma_x)
+
+        if x0 is not None:
+            x0 = torch.as_tensor(x0, dtype=torch.float32, device=device)
+            if x0.ndim == 1:
+                x0 = x0.unsqueeze(0).repeat(b_size, 1)
+            if x0.shape != (b_size, self.n_dims):
+                raise ValueError("x0 must have shape (n_dims,) or (b_size, n_dims)")
+            xs_b[:, 0, :] = x0
+        elif generators is None:
+            xs_b[:, 0, :] = self.initial_std * torch.randn(b_size, self.n_dims, device=device)
+        else:
+            for i in range(b_size):
+                xs_b[i, 0, :] = self.initial_std * torch.randn(self.n_dims, generator=generators[i], device=device)
+
+        for t in range(1, n_points):
+            A_t = self._resolve_transition(t, n_points, A=A, A_seq=A_seq, device=device)
+            if sigma_x_seq is not None:
+                sigma_t = sigma_x_seq[t]
+                sigma_t = float(sigma_t) if not torch.is_tensor(sigma_t) else float(sigma_t.item())
+            else:
+                sigma_t = sigma_x
+
+            if generators is None:
+                eta_t = sigma_t * torch.randn(b_size, self.n_dims, device=device)
+            else:
+                eta_t = torch.zeros(b_size, self.n_dims, device=device)
+                for i in range(b_size):
+                    eta_t[i] = sigma_t * torch.randn(self.n_dims, generator=generators[i], device=device)
+
+            xs_b[:, t, :] = torch.matmul(xs_b[:, t - 1, :], A_t.T) + eta_t
+
+        if self.scale is not None:
+            xs_b = xs_b @ self.scale
+        if self.bias is not None:
+            xs_b += self.bias
+        if n_dims_truncated is not None:
+            xs_b[:, :, n_dims_truncated:] = 0
+
+        return xs_b
+
 class VAR1Sampler(DataSampler):
     def __init__(self, n_dims, ar1_mat=None, noise_std=1.0, bias=None, scale=None):
         super().__init__(n_dims)

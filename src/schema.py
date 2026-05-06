@@ -41,6 +41,7 @@ TASK_LIST = [
     "relu_2nn_regression",
     "decision_tree",
     "noisy_linear_regression",
+    "markov_noisy_linear_regression",
     "uniform_hypersphere_regression"
 ]
 
@@ -49,7 +50,7 @@ training_schema = {
     "task_kwargs": merge(tdict, required),
     "num_tasks": merge(tinteger, nullable, default(None)),
     "num_training_examples": merge(tinteger, nullable, default(None)),
-    "data": merge(tstring, allowed(["gaussian","ar1","vr1","ar2",'vr2',"nonstation", "sparse_gaussian", "gamma", "beta", "exponential", "laplace", "uniform", "poisson", "tstudent", "rayleigh", "cauchy"])),
+    "data": merge(tstring, allowed(["gaussian","ar1","vr1","ar2",'vr2',"nonstation", "markov", "sparse_gaussian", "gamma", "beta", "exponential", "laplace", "uniform", "poisson", "tstudent", "rayleigh", "cauchy"])),
     "data_kwargs": merge(tdict, nullable),
     "batch_size": merge(tinteger, default(64)),
     "learning_rate": merge(tfloat, default(3e-4)),

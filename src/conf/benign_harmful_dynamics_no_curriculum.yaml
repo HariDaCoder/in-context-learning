@@ -13,7 +13,6 @@ training:
       end: 41
       inc: 2
       interval: 2000
-  log_every_steps: 100
   train_steps: 500001
 
 out_dir: D:\Henry-Projects\ChestXray\data\in-context-learning\models\benign_harmful_dynamics_small
