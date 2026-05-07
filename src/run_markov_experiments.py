@@ -56,6 +56,7 @@ def _dump_yaml(path: Path, payload: dict) -> None:
 
 def _merge_base_config(base_config: dict, modifications: dict) -> dict:
     config = copy.deepcopy(base_config)
+    config.pop("inherit", None)
     training = config.setdefault("training", {})
 
     if "data" in modifications:
@@ -66,6 +67,8 @@ def _merge_base_config(base_config: dict, modifications: dict) -> dict:
         training["task"] = modifications["task"]
     if "task_kwargs" in modifications:
         training["task_kwargs"] = modifications["task_kwargs"]
+    if "keep_every_steps" in modifications:
+        training["keep_every_steps"] = modifications["keep_every_steps"]
     if "out_dir" in modifications:
         config["out_dir"] = modifications["out_dir"]
     if "wandb" in modifications:
@@ -116,7 +119,7 @@ def _build_experiments(spec: dict, base_config: dict) -> list[tuple[str, dict]]:
                         "max_seq_length": 40,
                         "seed": 0,
                     },
-                    "task_kwargs": {"noise_std": 0.1, "seed": 0},
+                    "task_kwargs": {"noise_std": 1.0, "y_noise": 1.0, "seed": 0},
                     "out_dir": str(base_out_dir / name),
                     "wandb": {
                         "name": f"Markov stationary scale={scale}",
@@ -141,7 +144,7 @@ def _build_experiments(spec: dict, base_config: dict) -> list[tuple[str, dict]]:
                     "max_seq_length": 40,
                     "seed": 0,
                 },
-                "task_kwargs": {"noise_std": 0.1, "seed": 0},
+                "task_kwargs": {"noise_std": 1.0, "y_noise": 1.0, "seed": 0},
                 "out_dir": str(base_out_dir / "exp2_drift"),
                 "wandb": {
                     "name": "Markov drift",
@@ -166,7 +169,7 @@ def _build_experiments(spec: dict, base_config: dict) -> list[tuple[str, dict]]:
                         "max_seq_length": 40,
                         "seed": 0,
                     },
-                    "task_kwargs": {"noise_std": 0.1, "seed": 0},
+                    "task_kwargs": {"noise_std": 1.0, "y_noise": 1.0, "seed": 0},
                     "out_dir": str(base_out_dir / name),
                     "wandb": {
                         "name": f"Markov sigma_x={sigma_x}",
@@ -191,7 +194,7 @@ def _build_experiments(spec: dict, base_config: dict) -> list[tuple[str, dict]]:
                         "max_seq_length": 40,
                         "seed": 0,
                     },
-                    "task_kwargs": {"noise_std": float(sigma_y), "seed": 0},
+                    "task_kwargs": {"noise_std": float(sigma_y), "y_noise": float(sigma_y), "seed": 0},
                     "out_dir": str(base_out_dir / name),
                     "wandb": {
                         "name": f"Markov sigma_y={sigma_y}",

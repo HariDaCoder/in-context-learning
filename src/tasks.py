@@ -405,6 +405,7 @@ class MarkovNoisyLinearRegression(LinearRegression):
         seeds=None,
         scale=1,
         noise_std=1.0,
+        y_noise=None,
         uniform=False,
         w=None,
         seed=None,
@@ -412,7 +413,7 @@ class MarkovNoisyLinearRegression(LinearRegression):
         super(MarkovNoisyLinearRegression, self).__init__(
             n_dims, batch_size, pool_dict, seeds, scale, uniform
         )
-        self.noise_std = float(noise_std)
+        self.noise_std = float(y_noise if y_noise is not None else noise_std)
 
         if w is not None:
             w_tensor = torch.as_tensor(w, dtype=torch.float32)
@@ -454,7 +455,7 @@ class MarkovNoisyLinearRegression(LinearRegression):
 
     @staticmethod
     def get_metric():
-        return mean_squared_error
+        return squared_error
 
     @staticmethod
     def get_training_metric():
@@ -572,7 +573,7 @@ class DecisionTree(Task):
             self.target_tensor = torch.randn(self.dt_tensor.shape)
         elif seeds is not None:
             self.dt_tensor = torch.zeros(batch_size, 2 ** (depth + 1) - 1)
-            self.target_tensor = torch.zeros_like(dt_tensor)
+            self.target_tensor = torch.zeros_like(self.dt_tensor)
             generator = torch.Generator()
             assert len(seeds) == self.b_size
             for i, seed in enumerate(seeds):

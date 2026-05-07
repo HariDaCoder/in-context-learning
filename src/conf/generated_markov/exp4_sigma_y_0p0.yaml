@@ -12,12 +12,13 @@ training:
     noise_std: 1.0
     initial_std: 0.0
     markov_mode: stationary
-    markov_scale: 0.3
+    markov_scale: 0.6
     max_seq_length: 40
     seed: 0
   task: markov_noisy_linear_regression
   task_kwargs:
-    noise_std: 0.1
+    noise_std: 0.0
+    y_noise: 0.0
     seed: 0
   keep_every_steps: 1000
   save_every_steps: 500
@@ -34,10 +35,10 @@ training:
       end: 40
       inc: 0
       interval: 1000000
-out_dir: D:\MyBK\Scientific_Research\Benign Overfitting in ICL\in-context-learning\models\markov_benign_overfitting\exp1_stationary_scale_0p3
+out_dir: D:\MyBK\Scientific_Research\Benign Overfitting in ICL\in-context-learning\models\markov_benign_overfitting\exp4_sigma_y_0p0
 wandb:
   entity: hai-trinh220970-ho-chi-minh-city-university-of-technology
   project: in-context-training
-  name: Markov stationary scale=0.3
-  notes: Markov exp 1 stationary sweep, scale=0.3
+  name: Markov sigma_y=0.0
+  notes: Markov exp 4 label-noise sweep, sigma_y=0.0
   log_every_steps: 100

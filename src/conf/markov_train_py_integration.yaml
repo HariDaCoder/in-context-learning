@@ -15,7 +15,8 @@ training:
   # Markov task with label noise
   task: markov_noisy_linear_regression
   task_kwargs:
-    noise_std: 0.1        # sigma_y: label noise standard deviation
+    noise_std: 1.0        # sigma_y: label noise standard deviation
+    y_noise: 1.0          # explicit alias for label noise; keep this in sync with noise_std
     seed: 0
 
   # Fixed curriculum: no progression of n_dims or n_points
