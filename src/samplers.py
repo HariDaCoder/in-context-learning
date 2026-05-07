@@ -587,7 +587,7 @@ class MarkovSampler(DataSampler):
             return scale_val * q
 
         if mode == "stationary":
-            A = make_A(scale, seed=seed)
+            A = make_A(scale, seed_val=seed)
             return [A for _ in range(T)]
         
         elif mode == "drift":
@@ -596,14 +596,16 @@ class MarkovSampler(DataSampler):
             sequence = []
             for t in range(T):
                 scale_t = scale_start + (scale_end - scale_start) * (t / max(T - 1, 1))
-                sequence.append(make_A(scale_t, seed=seed + t if seed is not None else None))
+                sequence.append(
+                    make_A(scale_t, seed_val=seed + t if seed is not None else None)
+                )
             return sequence
         
         elif mode == "regime_switch":
             if scale_start is None or scale_end is None:
                 raise ValueError("scale_start and scale_end required for regime_switch mode")
-            first_A = make_A(scale_start, seed=seed)
-            second_A = make_A(scale_end, seed=seed + 1 if seed is not None else 1)
+            first_A = make_A(scale_start, seed_val=seed)
+            second_A = make_A(scale_end, seed_val=seed + 1 if seed is not None else 1)
             return [first_A if t < T // 2 else second_A for t in range(T)]
         
         else:

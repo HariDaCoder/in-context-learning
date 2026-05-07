@@ -94,6 +94,7 @@ def _build_experiments(spec: dict, base_config: dict) -> list[tuple[str, dict]]:
     common_training = {
         "data": "markov",
         "task": "markov_noisy_linear_regression",
+        "keep_every_steps": 1000,
         "curriculum": {
             "dims": {"start": 20, "end": 20, "inc": 0, "interval": 1000000},
             "points": {"start": 40, "end": 40, "inc": 0, "interval": 1000000},
