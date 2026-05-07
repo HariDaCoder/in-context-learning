@@ -21,6 +21,7 @@ def get_data_sampler(data_name, n_dims, **kwargs):
         "ar2":AR2Sampler,
         "vr2":VR2Sampler,
         "nonstation":NonStationarySampler,
+        "markov": MarkovSampler,
         "uniform": UniformSampler,
         "exponential": ExponentialSampler,
         "laplace": LaplaceSampler,
@@ -533,21 +534,86 @@ class NonStationarySampler(DataSampler):
 class MarkovSampler(DataSampler):
     """Generate x_t = A_t x_{t-1} + eta_t with Gaussian input noise."""
 
-    def __init__(self, n_dims, transition_matrix=None, noise_std=1.0, initial_std=1.0, bias=None, scale=None):
+    def __init__(
+        self,
+        n_dims,
+        transition_matrix=None,
+        noise_std=1.0,
+        initial_std=1.0,
+        bias=None,
+        scale=None,
+        markov_mode=None,
+        markov_scale=None,
+        markov_scale_start=None,
+        markov_scale_end=None,
+        max_seq_length=None,
+        seed=None,
+    ):
         super().__init__(n_dims)
-        if transition_matrix is None:
-            transition_matrix = torch.zeros(n_dims, n_dims)
-
-        transition_matrix = torch.as_tensor(transition_matrix, dtype=torch.float32)
-        assert transition_matrix.shape == (n_dims, n_dims), "transition_matrix must be n_dims x n_dims"
-
-        self.transition_matrix = transition_matrix
+        
         self.noise_std = float(noise_std)
         self.initial_std = float(initial_std)
         self.bias = bias
         self.scale = scale
+        self.max_seq_length = max_seq_length
+        
+        # Generate A or A_seq based on markov_mode
+        if markov_mode is not None and markov_scale is not None:
+            if max_seq_length is None:
+                raise ValueError("max_seq_length required when using markov_mode")
+            self.A_seq = self._generate_A_seq(
+                markov_mode,
+                max_seq_length,
+                markov_scale,
+                markov_scale_start,
+                markov_scale_end,
+                seed,
+            )
+            self.transition_matrix = None
+        elif transition_matrix is not None:
+            transition_matrix = torch.as_tensor(transition_matrix, dtype=torch.float32)
+            assert transition_matrix.shape == (n_dims, n_dims), "transition_matrix must be n_dims x n_dims"
+            self.transition_matrix = transition_matrix
+            self.A_seq = None
+        else:
+            self.transition_matrix = torch.zeros(n_dims, n_dims)
+            self.A_seq = None
+
+    def _generate_A_seq(self, mode, T, scale, scale_start=None, scale_end=None, seed=None):
+        """Generate A_seq based on mode: 'stationary', 'drift', or 'regime_switch'."""
+        def make_A(scale_val, seed_val=None):
+            generator = None if seed_val is None else torch.Generator().manual_seed(int(seed_val))
+            q, _ = torch.linalg.qr(torch.randn(self.n_dims, self.n_dims, generator=generator))
+            return scale_val * q
+
+        if mode == "stationary":
+            A = make_A(scale, seed=seed)
+            return [A for _ in range(T)]
+        
+        elif mode == "drift":
+            if scale_start is None or scale_end is None:
+                raise ValueError("scale_start and scale_end required for drift mode")
+            sequence = []
+            for t in range(T):
+                scale_t = scale_start + (scale_end - scale_start) * (t / max(T - 1, 1))
+                sequence.append(make_A(scale_t, seed=seed + t if seed is not None else None))
+            return sequence
+        
+        elif mode == "regime_switch":
+            if scale_start is None or scale_end is None:
+                raise ValueError("scale_start and scale_end required for regime_switch mode")
+            first_A = make_A(scale_start, seed=seed)
+            second_A = make_A(scale_end, seed=seed + 1 if seed is not None else 1)
+            return [first_A if t < T // 2 else second_A for t in range(T)]
+        
+        else:
+            raise ValueError(f"Unknown markov_mode: {mode}")
 
     def _resolve_transition(self, t, n_points, A=None, A_seq=None, device="cpu"):
+        """
+        Resolve which transition matrix to use at timestep t.
+        Priority: explicit A_seq > explicit A > self.A_seq > self.transition_matrix
+        """
         if A_seq is not None:
             if len(A_seq) != n_points:
                 raise ValueError("A_seq must have length n_points")
@@ -555,6 +621,13 @@ class MarkovSampler(DataSampler):
 
         if A is not None:
             return torch.as_tensor(A, dtype=torch.float32, device=device)
+
+        if self.A_seq is not None:
+            if t >= len(self.A_seq):
+                # If t is beyond stored A_seq (e.g., curriculum extended n_points),
+                # repeat the last A
+                return self.A_seq[-1].to(device)
+            return self.A_seq[t].to(device)
 
         return self.transition_matrix.to(device)
 

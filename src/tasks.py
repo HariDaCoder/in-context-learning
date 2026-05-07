@@ -407,6 +407,7 @@ class MarkovNoisyLinearRegression(LinearRegression):
         noise_std=1.0,
         uniform=False,
         w=None,
+        seed=None,
     ):
         super(MarkovNoisyLinearRegression, self).__init__(
             n_dims, batch_size, pool_dict, seeds, scale, uniform
@@ -435,6 +436,11 @@ class MarkovNoisyLinearRegression(LinearRegression):
                 raise ValueError("Unsupported w shape for MarkovNoisyLinearRegression")
 
             self.w_b = w_tensor.clone()
+        elif seed is not None:
+            generator = torch.Generator()
+            generator.manual_seed(int(seed))
+            w_b = torch.randn(self.n_dims, 1, generator=generator)
+            self.w_b = w_b.view(1, self.n_dims, 1).repeat(self.b_size, 1, 1)
 
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)

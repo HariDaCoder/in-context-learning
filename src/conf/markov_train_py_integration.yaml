@@ -1,0 +1,41 @@
+inherit:
+  - benign_harmful_dynamics_small.yaml
+
+training:
+  # Markov data generation
+  data: markov
+  data_kwargs:
+    noise_std: 1.0        # sigma_x: input noise standard deviation
+    initial_std: 0.0      # Start from x_0 = 0
+    markov_mode: stationary  # Options: stationary, drift, regime_switch
+    markov_scale: 0.6     # Eigenvalue scale for A matrix
+    max_seq_length: 40   # T: maximum sequence length (context length)
+    seed: 0
+
+  # Markov task with label noise
+  task: markov_noisy_linear_regression
+  task_kwargs:
+    noise_std: 0.1        # sigma_y: label noise standard deviation
+    seed: 0
+
+  # Fixed curriculum: no progression of n_dims or n_points
+  curriculum:
+    dims:
+      start: 20
+      end: 20
+      inc: 0
+      interval: 1000000  # Very large so never increments
+    points:
+      start: 40
+      end: 40
+      inc: 0
+      interval: 1000000  # Very large so never increments
+
+  batch_size: 256
+  train_steps: 500001
+  learning_rate: 0.0001
+  log_every_steps: 100
+  save_every_steps: 500
+  keep_every_steps: 5000
+
+out_dir: ../models/markov_benign_overfitting/stationary_scale0p6
