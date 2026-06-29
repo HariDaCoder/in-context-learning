@@ -60,7 +60,7 @@ def _build_noise_list(start, end, step):
     return values
 
 
-def _make_noise_config(base_config_path, repo_root, run_id, noise_std):
+def _make_noise_config(base_config_path, repo_root, run_id, noise_std, out_dir_override=None):
     base_conf = _load_yaml(base_config_path)
 
     training = dict(base_conf.get("training", {}))
@@ -69,10 +69,13 @@ def _make_noise_config(base_config_path, repo_root, run_id, noise_std):
     training["task_kwargs"] = task_kwargs
     training["resume_id"] = run_id
 
-    out_dir = base_conf.get("out_dir")
+    out_dir = out_dir_override or base_conf.get("out_dir")
     if not out_dir:
         raise ValueError(f"Missing out_dir in config: {base_config_path}")
-    resolved_out_dir = os.path.abspath(os.path.join(repo_root, out_dir))
+    if os.path.isabs(out_dir):
+        resolved_out_dir = out_dir
+    else:
+        resolved_out_dir = os.path.abspath(os.path.join(repo_root, out_dir))
 
     base_name = os.path.basename(base_config_path)
     base_stem, _ = os.path.splitext(base_name)
@@ -130,13 +133,22 @@ def main():
     parser.add_argument("--plot_prefix", type=str, default="small_matched_noise")
     parser.add_argument("--plot_step_stride", type=int, default=5000)
     parser.add_argument("--plot_num_eval_examples", type=int, default=256)
+    parser.add_argument(
+        "--out_dir",
+        type=str,
+        default=None,
+        help="Override output directory from config. Use for Kaggle: e.g. /kaggle/working/models/tiny",
+    )
     args = parser.parse_args()
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     config_path = os.path.abspath(os.path.join(repo_root, args.config))
 
-    config_out_dir = _get_out_dir_from_config(config_path)
-    out_root = _resolve_out_root(repo_root, config_out_dir)
+    if args.out_dir:
+        out_root = os.path.abspath(args.out_dir)
+    else:
+        config_out_dir = _get_out_dir_from_config(config_path)
+        out_root = _resolve_out_root(repo_root, config_out_dir)
     os.makedirs(out_root, exist_ok=True)
 
     noise_values = _build_noise_list(args.noise_start, args.noise_end, args.noise_step)
@@ -145,7 +157,7 @@ def main():
     for noise_std in noise_values:
         noise_tag = _format_noise_tag(noise_std)
         run_id = f"{args.run_id_prefix}_std{noise_tag}"
-        noise_config_path = _make_noise_config(config_path, repo_root, run_id, noise_std)
+        noise_config_path = _make_noise_config(config_path, repo_root, run_id, noise_std, out_dir_override=args.out_dir)
         print(f"[INFO] ===== Noise std={noise_std} | run_id={run_id} =====")
         print(f"[INFO] Using config: {noise_config_path}")
 

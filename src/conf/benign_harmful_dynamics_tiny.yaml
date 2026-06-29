@@ -1,0 +1,50 @@
+inherit:
+  - benign_harmful_dynamics.yaml
+  - models/tiny.yaml
+  - wandb.yaml
+
+model:
+  family: gpt2
+  n_dims: 20
+  n_embd: 64
+  n_head: 2
+  n_layer: 3
+  n_positions: 101
+
+training:
+  batch_size: 256
+  data: gaussian
+  data_kwargs: {}
+  task: noisy_linear_regression
+  task_kwargs:
+    noise_type: normal
+    noise_std: 0.0
+    w_distribution: gaussian
+    w_kwargs:
+      scale: 1.0
+  curriculum:
+    dims:
+      start: 20
+      end: 20
+      inc: 1
+      interval: 2000
+    points:
+      start: 41
+      end: 41
+      inc: 2
+      interval: 2000
+  keep_every_steps: 5000
+  save_every_steps: 500
+  train_steps: 500001
+  resume_id: null
+
+# Relative path - works on both local and Kaggle
+# Override via CLI: python train.py --config ... then patch out_dir in runner script
+out_dir: ../models/benign_harmful_dynamics_tiny
+
+wandb:
+  entity: hai-trinh220970-ho-chi-minh-city-university-of-technology
+  project: in-context-training
+  name: benign-harmful-dynamics-tiny
+  notes: "Tiny model (3-layer, 2-head, 64-dim) for fast S-shape diagnostic. No curriculum. Matched noise sweep."
+  log_every_steps: 100

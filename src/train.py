@@ -25,8 +25,9 @@ def train_step(model, xs, ys, optimizer, loss_func):
     output = model(xs, ys)
     loss = loss_func(output, ys)
     loss.backward()
+    grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float('inf'))
     optimizer.step()
-    return loss.detach().item(), output.detach()
+    return loss.detach().item(), output.detach(), grad_norm.item()
 
 
 def sample_seeds(total_seeds, count):
@@ -183,7 +184,7 @@ def train(model, args):
 
         loss_func = task.get_training_metric()
 
-        loss, output = train_step(model, xs.cuda(), ys.cuda(), optimizer, loss_func)
+        loss, output, grad_norm = train_step(model, xs.cuda(), ys.cuda(), optimizer, loss_func)
 
         point_wise_tags = list(range(curriculum.n_points))
         point_wise_loss_func = task.get_metric()
@@ -202,6 +203,7 @@ def train(model, args):
                 {
                     "overall_loss": loss,
                     "excess_loss": loss / baseline_loss,
+                    "grad_norm": grad_norm,
                     "pointwise/loss": dict(
                         zip(point_wise_tags, point_wise_loss.cpu().numpy())
                     ),
