@@ -159,6 +159,7 @@ def train(model, args):
         for i in range(state["train_step"] + 1):
             curriculum.update()
 
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     n_dims = model.n_dims
     bsize = args.training.batch_size
     data_sampler = get_data_sampler(
@@ -191,6 +192,7 @@ def train(model, args):
             curriculum.n_points,
             bsize,
             curriculum.n_dims_truncated,
+            device=device,
             **data_sampler_args,
         )
         task = task_sampler(**task_sampler_args)
@@ -198,11 +200,11 @@ def train(model, args):
 
         loss_func = task.get_training_metric()
 
-        loss, output, grad_norm = train_step(model, xs.cuda(), ys.cuda(), optimizer, loss_func)
+        loss, output, grad_norm = train_step(model, xs, ys, optimizer, loss_func)
 
         point_wise_tags = list(range(curriculum.n_points))
         point_wise_loss_func = task.get_metric()
-        point_wise_loss = point_wise_loss_func(output, ys.cuda()).mean(dim=0)
+        point_wise_loss = point_wise_loss_func(output, ys).mean(dim=0)
 
         baseline_loss = (
             sum(
@@ -227,7 +229,8 @@ def train(model, args):
                 step=i,
             )
             train_losses[str(i)] = float(loss)
-            _save_train_losses(train_loss_path, train_losses)
+            if i % args.training.save_every_steps == 0:
+                _save_train_losses(train_loss_path, train_losses)
 
         curriculum.update()
 
@@ -239,6 +242,7 @@ def train(model, args):
                 "train_step": i,
             }
             torch.save(training_state, state_path)
+            _save_train_losses(train_loss_path, train_losses)
 
         if (
             args.training.keep_every_steps > 0
@@ -247,6 +251,9 @@ def train(model, args):
             and i > 0
         ):
             torch.save(model.state_dict(), os.path.join(args.out_dir, f"model_{i}.pt"))
+
+    if not args.test_run:
+        _save_train_losses(train_loss_path, train_losses)
 
 
 def main(args):
