@@ -1,8 +1,10 @@
 import os
+import random
 from random import randint
 import uuid
 import json
 
+import numpy as np
 from quinine import QuinineArgumentParser
 from tqdm import tqdm
 import torch
@@ -18,6 +20,18 @@ from models import build_model
 import wandb
 
 torch.backends.cudnn.benchmark = True
+
+
+def set_global_seed(seed):
+    """Set RNG seeds for reproducible training when training.seed is provided."""
+    if seed is None:
+        return
+    seed = int(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def train_step(model, xs, ys, optimizer, loss_func):
@@ -80,7 +94,7 @@ def _sanitize_training_kwargs(args):
         "linear_classification": {"scale", "uniform"},
         "relu_2nn_regression": {"scale", "hidden_layer_size"},
         "decision_tree": {"depth"},
-        "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform", "w_distribution", "w_kwargs"},
+        "noisy_linear_regression": {"scale", "noise_std", "renormalize_ys", "noise_type", "uniform", "w_distribution", "w_kwargs", "noise_kwargs", "loss_type"},
         "markov_noisy_linear_regression": {"scale", "noise_std", "y_noise", "uniform", "w", "seed"},
         "ar1_linear_regression": {"scale", "ar_coef", "noise_std", "compute_gradient"},
         "uniform_hypersphere_regression": {"scale"},
@@ -236,6 +250,9 @@ def train(model, args):
 
 
 def main(args):
+    set_global_seed(getattr(args.training, "seed", None))
+    _sanitize_training_kwargs(args)
+
     if args.test_run:
         curriculum_args = args.training.curriculum
         curriculum_args.points.start = curriculum_args.points.end

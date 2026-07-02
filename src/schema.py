@@ -58,6 +58,7 @@ training_schema = {
     "save_every_steps": merge(tinteger, default(1000)),  # how often to checkpoint
     "keep_every_steps": merge(tinteger, default(-1)),  # permanent checkpoints
     "resume_id": merge(tstring, nullable, default(None)),  # run uuid64
+    "seed": merge(tinteger, nullable, default(None)),  # global reproducibility seed
     "curriculum": stdict(curriculum_schema),
 }
 

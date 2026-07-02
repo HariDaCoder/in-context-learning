@@ -60,7 +60,7 @@ def _build_noise_list(start, end, step):
     return values
 
 
-def _make_noise_config(base_config_path, repo_root, run_id, noise_std, out_dir_override=None):
+def _make_noise_config(base_config_path, repo_root, run_id, noise_std, out_dir_override=None, train_steps=None):
     base_conf = _load_yaml(base_config_path)
 
     training = dict(base_conf.get("training", {}))
@@ -91,6 +91,8 @@ def _make_noise_config(base_config_path, repo_root, run_id, noise_std, out_dir_o
             "task_kwargs": training["task_kwargs"],
         },
     }
+    if train_steps is not None:
+        temp_conf["training"]["train_steps"] = int(train_steps)
 
     with open(temp_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(temp_conf, f, sort_keys=False)
@@ -139,6 +141,12 @@ def main():
         default=None,
         help="Override output directory from config. Use for Kaggle: e.g. /kaggle/working/models/tiny",
     )
+    parser.add_argument(
+        "--train_steps",
+        type=int,
+        default=None,
+        help="Override train_steps parameter in config. Use to train for fewer steps (e.g. 200000).",
+    )
     args = parser.parse_args()
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -157,7 +165,7 @@ def main():
     for noise_std in noise_values:
         noise_tag = _format_noise_tag(noise_std)
         run_id = f"{args.run_id_prefix}_std{noise_tag}"
-        noise_config_path = _make_noise_config(config_path, repo_root, run_id, noise_std, out_dir_override=args.out_dir)
+        noise_config_path = _make_noise_config(config_path, repo_root, run_id, noise_std, out_dir_override=args.out_dir, train_steps=args.train_steps)
         print(f"[INFO] ===== Noise std={noise_std} | run_id={run_id} =====")
         print(f"[INFO] Using config: {noise_config_path}")
 

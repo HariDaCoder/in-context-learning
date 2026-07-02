@@ -1,0 +1,15 @@
+inherit:
+- ../benign_overfitting_snr.yaml
+out_dir: D:\MyBK\Scientific_Research\Benign Overfitting in ICL\models\benign_overfitting_snr
+training:
+  resume_id: snr_sweep_var0p1_seed0
+  seed: 0
+  task_kwargs:
+    noise_type: normal
+    noise_std: 0.31622776601683794
+    w_distribution: gaussian
+    w_kwargs:
+      scale: 1.0
+    loss_type: l2
+wandb:
+  name: snr_sweep_var0p1_seed0
