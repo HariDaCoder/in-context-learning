@@ -380,13 +380,22 @@ def main():
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--plot_each_step", action="store_true")
     parser.add_argument("--device", type=str, default=None)
+    parser.add_argument("--mode", type=str, choices=["dynamics", "sweep"], default=None, help="Override experiment mode.")
+    parser.add_argument("--train_steps", type=int, default=None, help="Override training steps in dynamics mode.")
     args = parser.parse_args()
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     config_path = args.config or _default_config_path(repo_root)
     cfg = _load_yaml(config_path)
 
-    output_dir = _resolve_path(repo_root, cfg["out_dir"])
+    if args.mode is not None:
+        cfg["mode"] = args.mode
+    if args.train_steps is not None:
+        cfg["train_steps"] = args.train_steps
+
+    mode = cfg.get("mode", "sweep")
+    base_output_dir = _resolve_path(repo_root, cfg["out_dir"])
+    output_dir = os.path.join(base_output_dir, mode)
     os.makedirs(output_dir, exist_ok=True)
 
     cfg["output_dir"] = output_dir
@@ -400,7 +409,6 @@ def main():
     results_path = os.path.join(output_dir, RESULT_FILE)
     plot_path = os.path.join(output_dir, PLOT_FILE)
 
-    mode = cfg.get("mode", "sweep")
     if mode == "dynamics":
         summary = run_dynamics(cfg, output_dir, state_path, results_path, plot_path, resume=args.resume)
         print(f"Saved dynamics results to {results_path}")
