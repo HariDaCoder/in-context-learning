@@ -108,9 +108,7 @@ def execute_ar1_sweep(out_root, train_steps, resume):
         cfg["training"]["data"] = "ar1"
         cfg["training"]["data_kwargs"] = {
             "rho": float(rho),
-            "noise_std": 1.0,
-            "bias": 0.0,
-            "scale": 1.0
+            "noise_std": 1.0
         }
         cfg["wandb"]["name"] = f"Noniid-Trans-AR1-rho{rho}"
         cfg["wandb"]["notes"] = f"2-layer GPT2 on AR1 data, rho={rho}"
@@ -145,9 +143,7 @@ def execute_markov_sweep(out_root, train_steps, resume):
             "markov_scale": float(scale),
             "markov_mode": "stationary",
             "noise_std": 1.0,
-            "initial_std": 0.0,
-            "bias": 0.0,
-            "scale": 1.0
+            "initial_std": 0.0
         }
         cfg["wandb"]["name"] = f"Noniid-Trans-Markov-scale{scale}"
         cfg["wandb"]["notes"] = f"2-layer GPT2 on Markov data, scale={scale}"
