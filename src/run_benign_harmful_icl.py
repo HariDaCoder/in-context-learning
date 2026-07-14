@@ -501,6 +501,8 @@ def parse_args():
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
     args = parse_args()
     os.makedirs(args.out_dir, exist_ok=True)
 

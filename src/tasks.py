@@ -137,11 +137,9 @@ class LinearRegression(Task):
         elif pool_dict is not None and seeds is not None:
             assert "w" in pool_dict
             num_pool_tasks = len(pool_dict["w"])
-            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
-            for i, seed in enumerate(seeds):
-                # Deterministically choose a task from the pool based on the seed
-                idx = int(seed) % num_pool_tasks
-                self.w_b[i] = pool_dict["w"][idx]
+            # Vectorized selection from task pool using seeds
+            idx_tensor = torch.tensor(list(seeds), dtype=torch.long) % num_pool_tasks
+            self.w_b = pool_dict["w"][idx_tensor]
         elif seeds is not None:
             self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
             generator = torch.Generator()

@@ -288,6 +288,8 @@ def main(args):
 
 
 if __name__ == "__main__":
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
     parser = QuinineArgumentParser(schema=schema)
     args = parser.parse_quinfig()
     assert args.model.family in ["gpt2", "lstm"]
