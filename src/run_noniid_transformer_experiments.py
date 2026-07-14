@@ -38,18 +38,42 @@ def save_yaml(path, data):
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
+def find_uuid_and_step(run_dir):
+    """
+    Finds the run UUID subdirectory and the last saved train_step.
+    Returns (uuid_str, step_int) or (None, 0).
+    """
+    if not os.path.exists(run_dir):
+        return None, 0
+    subdirs = [d for d in glob.glob(os.path.join(run_dir, "*")) if os.path.isdir(d)]
+    for subdir in subdirs:
+        state_path = os.path.join(subdir, "state.pt")
+        if os.path.exists(state_path):
+            try:
+                state = torch.load(state_path, map_location="cpu")
+                step = int(state.get("train_step", 0))
+                uuid_str = os.path.basename(subdir)
+                return uuid_str, step
+            except Exception:
+                pass
+    return None, 0
+
+
 def get_checkpoint_steps(run_dir):
-    """Find all saved model steps (model_*.pt) and the final state.pt in the directory."""
+    """Find all saved model steps (model_*.pt) and the final state.pt in the directory (handles UUID subdirs)."""
+    existing_uuid, _ = find_uuid_and_step(run_dir)
+    actual_dir = os.path.join(run_dir, existing_uuid) if existing_uuid else run_dir
+
     steps = []
     # Search for model_*.pt
-    for p in glob.glob(os.path.join(run_dir, "model_*.pt")):
+    for p in glob.glob(os.path.join(actual_dir, "model_*.pt")):
         match = re.search(r"model_(\d+)\.pt", os.path.basename(p))
         if match:
             steps.append(int(match.group(1)))
     steps = sorted(list(set(steps)))
 
     # Check for final state
-    state_path = os.path.join(run_dir, "state.pt")
+    state_path = os.path.join(actual_dir, "state.pt")
     if os.path.exists(state_path):
         try:
             state = torch.load(state_path, map_location="cpu")
@@ -57,18 +81,17 @@ def get_checkpoint_steps(run_dir):
             if final_step >= 0 and final_step not in steps:
                 steps.append(final_step)
         except Exception as e:
-            print(f"[WARN] Error reading state.pt in {run_dir}: {e}")
+            print(f"[WARN] Error reading state.pt in {actual_dir}: {e}")
     
     return sorted(steps)
 
 
 def run_training_for_config(config_path, run_dir, resume):
     """Run train.py with the generated config."""
-    state_path = os.path.join(run_dir, "state.pt")
-    if resume and os.path.exists(state_path):
+    existing_uuid, current_step = find_uuid_and_step(run_dir)
+    
+    if resume and existing_uuid is not None:
         try:
-            state = torch.load(state_path, map_location="cpu")
-            current_step = int(state.get("train_step", 0))
             # Load config to check target steps
             cfg = load_yaml(config_path)
             target_steps = int(cfg["training"]["train_steps"])
@@ -76,9 +99,12 @@ def run_training_for_config(config_path, run_dir, resume):
                 print(f"[INFO] Already finished training {current_step}/{target_steps} steps. Skipping.")
                 return
             else:
-                print(f"[INFO] Resuming training from step {current_step}/{target_steps}...")
+                print(f"[INFO] Resuming training from step {current_step}/{target_steps} with UUID {existing_uuid}...")
+                # Inject the resume_id into the config so train.py uses the same folder
+                cfg["training"]["resume_id"] = existing_uuid
+                save_yaml(config_path, cfg)
         except Exception as e:
-            print(f"[WARN] Could not parse state.pt to verify resume, restarting training: {e}")
+            print(f"[WARN] Could not check resume state for {run_dir}, restarting: {e}")
     
     # Run the train.py script
     cmd = [sys.executable, "src/train.py", "--config", str(config_path)]
@@ -165,15 +191,18 @@ def copy_config(d):
 
 def evaluate_run_checkpoints(run_dir, num_eval_examples=512):
     """Evaluate all checkpoints in a run and return steps and test losses."""
+    existing_uuid, _ = find_uuid_and_step(run_dir)
+    actual_dir = os.path.join(run_dir, existing_uuid) if existing_uuid else run_dir
+
     steps = get_checkpoint_steps(run_dir)
     if not steps:
-        print(f"[WARN] No checkpoints found in {run_dir}")
+        print(f"[WARN] No checkpoints found in {actual_dir}")
         return [], []
     
-    print(f"[EVAL] Evaluating {len(steps)} checkpoints in {run_dir}...")
+    print(f"[EVAL] Evaluating {len(steps)} checkpoints in {actual_dir}...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    _, conf = get_model_from_run(run_dir, only_conf=True)
+    _, conf = get_model_from_run(actual_dir, only_conf=True)
     batch_size = int(conf.training.batch_size)
     
     # We evaluate on ID matched test loss
@@ -187,7 +216,7 @@ def evaluate_run_checkpoints(run_dir, num_eval_examples=512):
     for step in steps:
         try:
             # Load model at specific step
-            model, _ = get_model_from_run(run_dir, step=step if step < steps[-1] else -1)
+            model, _ = get_model_from_run(actual_dir, step=step if step < steps[-1] else -1)
             model = model.to(device).eval()
             
             with torch.no_grad():
@@ -212,7 +241,7 @@ def evaluate_run_checkpoints(run_dir, num_eval_examples=512):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except Exception as e:
-            print(f"[ERROR] Failed evaluating step {step} in {run_dir}: {e}")
+            print(f"[ERROR] Failed evaluating step {step} in {actual_dir}: {e}")
             test_losses.append(None)
             
     # Filter out steps that failed to evaluate
