@@ -184,6 +184,10 @@ def generate_configs(args):
                     f"model={args.model_size}"
                 )
 
+                # Remove inherit field to prevent Quinine from looking for inherited files relative to the output run directory
+                if "inherit" in cfg:
+                    del cfg["inherit"]
+
                 config_path = os.path.join(run_dir, "config.yaml")
                 save_yaml(config_path, cfg)
                 configs.append({
