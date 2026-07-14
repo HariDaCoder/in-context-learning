@@ -36,7 +36,7 @@ class Task:
         self.b_size = batch_size
         self.pool_dict = pool_dict
         self.seeds = seeds
-        assert pool_dict is None or seeds is None
+        # We allow both to support deterministic sampling from a finite task pool for fixed training corpora
 
     def evaluate(self, xs):
         raise NotImplementedError
@@ -134,6 +134,14 @@ class LinearRegression(Task):
                 self.w_b = torch.rand(self.b_size, self.n_dims, 1) * 2 - 1
             else:
                 self.w_b = torch.randn(self.b_size, self.n_dims, 1)
+        elif pool_dict is not None and seeds is not None:
+            assert "w" in pool_dict
+            num_pool_tasks = len(pool_dict["w"])
+            self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
+            for i, seed in enumerate(seeds):
+                # Deterministically choose a task from the pool based on the seed
+                idx = int(seed) % num_pool_tasks
+                self.w_b[i] = pool_dict["w"][idx]
         elif seeds is not None:
             self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
             generator = torch.Generator()
