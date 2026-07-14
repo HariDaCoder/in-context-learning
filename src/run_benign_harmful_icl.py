@@ -32,6 +32,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import torch
@@ -202,9 +203,10 @@ def generate_configs(args):
 # Phase 2: Training
 # ---------------------------------------------------------------------------
 def run_training(configs, args):
-    """Run train.py for each config, optionally parallelising across GPUs."""
+    """Run train.py for each config, parallelising across GPUs with concurrency control."""
     num_gpus = max(1, torch.cuda.device_count())
-    print(f"[TRAIN] Starting training for {len(configs)} runs on {num_gpus} GPU(s)")
+    max_workers = num_gpus * args.jobs_per_gpu
+    print(f"[TRAIN] Starting training grid. GPUs found: {num_gpus}. Jobs per GPU: {args.jobs_per_gpu} (Max concurrency: {max_workers})")
 
     # Filter out already-completed runs
     to_run = []
@@ -228,27 +230,45 @@ def run_training(configs, args):
         print("[TRAIN] All runs already complete!")
         return
 
-    # Launch in batches of num_gpus
-    for batch_start in range(0, len(to_run), num_gpus):
-        batch = to_run[batch_start: batch_start + num_gpus]
-        procs = []
-        for gpu_idx, c in enumerate(batch):
-            gpu_id = gpu_idx % num_gpus
+    # Queue of runs remaining to be launched
+    to_run_queue = list(to_run)
+    # List of running processes: (process_handle, run_metadata, assigned_gpu_id)
+    active_procs = []
+    # GPU assignment slots pool (e.g. [0, 1, 0, 1, 0, 1, 0, 1])
+    gpu_slots = list(range(num_gpus)) * args.jobs_per_gpu
+
+    while to_run_queue or active_procs:
+        # Check for finished processes
+        finished = []
+        for p, c, gpu_id in active_procs:
+            rc = p.poll()
+            if rc is not None:
+                finished.append((p, c, gpu_id))
+                if rc != 0:
+                    print(f"  [ERROR] {c['run_name']} on GPU {gpu_id} exited with code {rc}")
+                else:
+                    print(f"  [DONE] {c['run_name']} on GPU {gpu_id}")
+
+        # Clean up finished processes and release GPU slots
+        for item in finished:
+            active_procs.remove(item)
+            gpu_slots.append(item[2])  # return slot back to pool
+
+        # Launch new jobs up to max concurrency
+        while to_run_queue and len(active_procs) < max_workers:
+            c = to_run_queue.pop(0)
+            gpu_id = gpu_slots.pop(0)  # assign a free GPU slot
+
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
             cmd = [sys.executable, str(SCRIPT_DIR / "train.py"),
                    "--config", c["config_path"]]
-            print(f"  [GPU {gpu_id}] {c['run_name']}")
+            print(f"  [LAUNCH] {c['run_name']} on GPU {gpu_id} ({len(to_run_queue)} remaining in queue)")
             p = subprocess.Popen(cmd, env=env, cwd=str(REPO_ROOT))
-            procs.append((p, c))
+            active_procs.append((p, c, gpu_id))
 
-        # Wait for this batch
-        for p, c in procs:
-            rc = p.wait()
-            if rc != 0:
-                print(f"  [ERROR] {c['run_name']} exited with code {rc}")
-            else:
-                print(f"  [DONE] {c['run_name']}")
+        # Yield execution control briefly to prevent busy-waiting
+        time.sleep(1.0)
 
     print("[TRAIN] Training phase complete")
 
@@ -451,6 +471,8 @@ def parse_args():
     parser.add_argument("--num_tasks", type=int, default=32)
     parser.add_argument("--num_training_examples", type=int, default=1024)
     parser.add_argument("--num_eval_examples", type=int, default=512)
+    parser.add_argument("--jobs_per_gpu", type=int, default=None,
+                        help="Number of concurrent training processes per GPU")
 
     args = parser.parse_args()
 
@@ -458,6 +480,7 @@ def parse_args():
     if args.pilot:
         args.model_size = "tiny"
         args.train_steps = min(args.train_steps, 50000)
+        args.jobs_per_gpu = args.jobs_per_gpu or 8
         args.snr_grid = args.snr_grid or PILOT_SNR_GRID
         args.markov_scales = args.markov_scales or PILOT_MARKOV_SCALES
         args.seeds = args.seeds or PILOT_SEEDS
@@ -465,6 +488,7 @@ def parse_args():
         args.snr_grid = args.snr_grid or DEFAULT_SNR_GRID
         args.markov_scales = args.markov_scales or DEFAULT_MARKOV_SCALES
         args.seeds = args.seeds or DEFAULT_SEEDS
+        args.jobs_per_gpu = args.jobs_per_gpu or 4
 
     return args
 
