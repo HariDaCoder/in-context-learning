@@ -63,6 +63,7 @@ def get_task_sampler(
         "linear_classification": LinearClassification,
         "noisy_linear_regression": NoisyLinearRegression,
         "markov_noisy_linear_regression": MarkovNoisyLinearRegression,
+        "noisy_context_clean_query": NoisyContextCleanQueryRegression,
         "quadratic_regression": QuadraticRegression,
         "relu_2nn_regression": Relu2nnRegression,
         "decision_tree": DecisionTree,
@@ -394,6 +395,47 @@ class NoisyLinearRegression(LinearRegression):
             return mean_squared_error
         else:  # default l1
             return mean_absolute_error
+
+
+class NoisyContextCleanQueryRegression(LinearRegression):
+    """Linear regression where context labels are noisy but the query label is clean.
+
+    y_t = w^T x_t + eps_t   for t = 1..T   (context, noisy)
+    y_q = w^T x_q            for t = T+1     (query, clean)
+    """
+
+    def __init__(
+        self,
+        n_dims,
+        batch_size,
+        pool_dict=None,
+        seeds=None,
+        scale=1,
+        noise_std=1.0,
+    ):
+        super().__init__(n_dims, batch_size, pool_dict, seeds, scale)
+        self.noise_std = float(noise_std)
+
+    def evaluate(self, xs_b):
+        w_b = self.w_b.to(xs_b.device)
+        ys_clean = self.scale * (xs_b @ w_b)[:, :, 0]  # (B, T+1)
+
+        # Add noise to context positions only
+        noise = self.noise_std * torch.randn_like(ys_clean)
+        noise[:, -1] = 0.0  # query position stays clean
+        return ys_clean + noise
+
+    @staticmethod
+    def generate_pool_dict(n_dims, num_tasks, **kwargs):
+        return {"w": torch.randn(num_tasks, n_dims, 1)}
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
 
 
 class MarkovNoisyLinearRegression(LinearRegression):

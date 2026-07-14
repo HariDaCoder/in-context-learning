@@ -1,0 +1,60 @@
+inherit:
+  - wandb.yaml
+
+model:
+  family: gpt2
+  n_dims: 20
+  n_embd: 64
+  n_head: 2
+  n_layer: 2
+  n_positions: 81    # 2*T + 1 = 2*40 + 1
+
+training:
+  # Data: unified Markov generator (IID = markov_scale: 0)
+  data: markov
+  data_kwargs:
+    markov_mode: stationary
+    markov_scale: 0.0           # overridden per experiment
+    max_seq_length: 40
+    noise_std: 1.0              # overridden by normalize_variance
+    initial_std: 0.0
+    seed: 0
+    normalize_variance: true    # keeps Var(x_t) = 1/d regardless of scale
+
+  # Task: context labels noisy, query label clean
+  task: noisy_context_clean_query
+  task_kwargs:
+    noise_std: 1.0              # overridden: 1/sqrt(SNR)
+    scale: 1
+
+  # Fixed curriculum (no ramp-up)
+  curriculum:
+    dims:
+      start: 20
+      end: 20
+      inc: 0
+      interval: 1000000
+    points:
+      start: 41                 # T context + 1 query
+      end: 41
+      inc: 0
+      interval: 1000000
+
+  batch_size: 256
+  train_steps: 200000
+  learning_rate: 0.0001
+  save_every_steps: 500
+  keep_every_steps: 500         # dense checkpoints for dynamics
+  num_tasks: 32                 # M = finite task pool for ID
+  num_training_examples: 1024   # N = fixed corpus size
+  resume_id: null
+  seed: 0
+
+out_dir: ../models/benign_harmful_icl
+
+wandb:
+  project: benign-harmful-icl
+  entity: hai-trinh220970-ho-chi-minh-city-university-of-technology
+  name: benign-harmful-icl-base
+  notes: "Unified benign/harmful overfitting ICL experiment"
+  log_every_steps: 100

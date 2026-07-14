@@ -532,7 +532,14 @@ class NonStationarySampler(DataSampler):
 
 
 class MarkovSampler(DataSampler):
-    """Generate x_t = A_t x_{t-1} + eta_t with Gaussian input noise."""
+    """Generate x_t = A_t x_{t-1} + eta_t with Gaussian input noise.
+
+    When ``normalize_variance=True`` (recommended for benign/harmful overfitting
+    experiments), the innovation noise_std is automatically set so that the
+    stationary marginal variance equals ``1/n_dims`` per coordinate, regardless
+    of ``markov_scale``.  This makes the Signal-to-Noise Ratio directly
+    comparable across IID (scale=0) and Markov (scale>0) conditions.
+    """
 
     def __init__(
         self,
@@ -548,15 +555,28 @@ class MarkovSampler(DataSampler):
         markov_scale_end=None,
         max_seq_length=None,
         seed=None,
+        normalize_variance=False,
     ):
         super().__init__(n_dims)
-        
-        self.noise_std = float(noise_std)
-        self.initial_std = float(initial_std)
+
         self.bias = bias
         self.scale = scale
         self.max_seq_length = max_seq_length
-        
+
+        # --- Variance normalisation ----------------------------------------
+        # For orthogonal A = s*Q, the stationary per-coordinate variance is
+        #   Var(x_{t,j}) = noise_std^2 / (1 - s^2).
+        # Setting noise_std = sqrt((1-s^2) / d) yields Var = 1/d.
+        ms = float(markov_scale) if markov_scale is not None else 0.0
+        if normalize_variance and markov_scale is not None:
+            target_var = 1.0 / n_dims
+            clamped_s2 = min(ms * ms, 0.9999)  # avoid division by zero
+            noise_std = math.sqrt(target_var * (1.0 - clamped_s2))
+            initial_std = math.sqrt(target_var)  # match stationary variance
+
+        self.noise_std = float(noise_std)
+        self.initial_std = float(initial_std)
+
         # Generate A or A_seq based on markov_mode
         if markov_mode is not None and markov_scale is not None:
             if max_seq_length is None:

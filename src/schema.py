@@ -42,6 +42,7 @@ TASK_LIST = [
     "decision_tree",
     "noisy_linear_regression",
     "markov_noisy_linear_regression",
+    "noisy_context_clean_query",
     "uniform_hypersphere_regression"
 ]
 
