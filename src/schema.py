@@ -36,6 +36,8 @@ curriculum_schema = {
 
 TASK_LIST = [
     "linear_regression",
+    "noisy_linear_regression",
+    "dependent_linear_regression",
     "sparse_linear_regression",
     "linear_classification",
     "relu_2nn_regression",
@@ -47,7 +49,12 @@ training_schema = {
     "task_kwargs": merge(tdict, required),
     "num_tasks": merge(tinteger, nullable, default(None)),
     "num_training_examples": merge(tinteger, nullable, default(None)),
-    "data": merge(tstring, allowed(["gaussian"])),
+    "data": merge(tstring, allowed(["gaussian", "gaussian_ar1"])),
+    "data_kwargs": merge(tdict, default({})),
+    "seed": merge(tinteger, default(0)),
+    "device": merge(tstring, default("auto")),
+    "query_mode": merge(tstring, allowed(["causal", "independent"]), default("causal")),
+    "eval_after_train": merge(tboolean, default(True)),
     "batch_size": merge(tinteger, default(64)),
     "learning_rate": merge(tfloat, default(3e-4)),
     "train_steps": merge(tinteger, default(1000)),
@@ -58,6 +65,7 @@ training_schema = {
 }
 
 wandb_schema = {
+    "mode": merge(tstring, allowed(["online", "offline", "disabled"]), default("online")),
     "project": merge(tstring, default("in-context-training")),
     "entity": merge(tstring, default("in-context")),
     "notes": merge(tstring, default("")),

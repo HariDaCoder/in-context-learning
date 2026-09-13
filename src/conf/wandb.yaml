@@ -1,4 +1,5 @@
 wandb:
+    mode: online  # set to disabled for checkpoint-only runs
     project: in-context-training
     entity: your-entity
     notes:

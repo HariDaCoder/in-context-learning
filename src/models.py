@@ -2,11 +2,7 @@ import torch
 import torch.nn as nn
 from transformers import GPT2Model, GPT2Config
 from tqdm import tqdm
-from sklearn.svm import LinearSVC
-from sklearn.linear_model import LogisticRegression, Lasso
 import warnings
-from sklearn import tree
-import xgboost as xgb
 
 from base_models import NeuralNetwork, ParallelNetworks
 
@@ -80,6 +76,10 @@ def get_relevant_baselines(task_name):
 class TransformerModel(nn.Module):
     def __init__(self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4):
         super(TransformerModel, self).__init__()
+        if min(n_dims, n_positions, n_embd, n_layer, n_head) <= 0:
+            raise ValueError("Transformer dimensions, layers and heads must be positive")
+        if n_embd % n_head:
+            raise ValueError("n_embd must be divisible by n_head")
         configuration = GPT2Config(
             n_positions=2 * n_positions,
             n_embd=n_embd,
@@ -243,6 +243,8 @@ class LassoModel:
     # inds is a list containing indices where we want the prediction.
     # prediction made at all indices by default.
     def __call__(self, xs, ys, inds=None):
+        from sklearn.linear_model import Lasso
+
         xs, ys = xs.cpu(), ys.cpu()
 
         if inds is None:
@@ -408,6 +410,8 @@ class DecisionTreeModel:
     # inds is a list containing indices where we want the prediction.
     # prediction made at all indices by default.
     def __call__(self, xs, ys, inds=None):
+        from sklearn import tree
+
         xs, ys = xs.cpu(), ys.cpu()
 
         if inds is None:
@@ -446,6 +450,8 @@ class XGBoostModel:
     # inds is a list containing indices where we want the prediction.
     # prediction made at all indices by default.
     def __call__(self, xs, ys, inds=None):
+        import xgboost as xgb
+
         xs, ys = xs.cpu(), ys.cpu()
 
         if inds is None:

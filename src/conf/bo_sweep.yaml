@@ -1,0 +1,29 @@
+# Small, CPU baseline smoke experiment; this does not train a Transformer.
+# python src/bo_experiment.py --config src/conf/bo_sweep.yaml --output results/bo_smoke.json
+# python src/bo_plot.py results/bo_smoke.json --out-dir results/bo_figures
+n_dims: [8]
+context_lengths: [4, 8, 16]  # Explicit k; a checkpoint must support k+1 query positions.
+rhos: [0.0, 0.6, 0.9]
+snrs: [0.5, 2.0, 8.0]  # Amplitude SNR = 1/sigma; use "inf" for no noise.
+eval_seeds: [1001, 1002, 1003]  # Evaluation replicates, separate from training seeds.
+n_eval: 32  # Independently sampled tasks/contexts per seed and condition.
+batch_size: 16
+n_queries: 64
+n_probe_queries: null  # Transformer: 2*d independent fitting queries.
+n_probe_test_queries: 64  # Disjoint holdout for implied predictor linearity.
+linear_probe: true
+query_batch_size: 256
+fit_threshold: 0.0001
+gen_threshold: 0.1
+linearity_threshold: 0.99
+baselines:
+  - ols  # SVD minimum-norm least squares, including k<d.
+  - kind: ridge
+    ridge_alpha: 1.0  # Fixed alpha; does not tune on test data.
+  - gls  # Oracle knows label-noise correlation, not task weights.
+# Fixed protocol controls. Use separate output files for separate protocols.
+feature_rho_after: null
+feature_change_point: null  # Set together with rho_after; see dependence.py convention.
+noise_rho: 0.0
+noise_rho_after: null
+noise_change_point: null

@@ -1,0 +1,23 @@
+# Same marginal distribution and change location as the forward protocol, with
+# the temporal order reversed: rho=0.9 first and IID transitions afterwards.
+n_dims: [20]
+context_lengths: [41]  # 40 transitions: 20 before and 20 after the change
+rhos: [0.9]
+snrs: [0.2, 0.4, 0.8, 1.6, 3.2]
+eval_seeds: [1001, 1002, 1003, 1004, 1005]
+n_eval: 128
+batch_size: 32
+n_queries: 64
+n_probe_queries: 64
+n_probe_test_queries: 128
+linear_probe: false
+query_batch_size: 256
+fit_threshold: 0.0001
+gen_threshold: 0.1
+linearity_threshold: 0.99
+baselines: [ols, gls]
+feature_rho_after: 0.0
+feature_change_point: 21
+noise_rho: 0.0
+noise_rho_after: null
+noise_change_point: null

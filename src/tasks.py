@@ -1,6 +1,9 @@
 import math
+import numbers
 
 import torch
+
+from dependence import ar1_from_innovations, temporal_correlation, validate_ar1
 
 
 def squared_error(ys_pred, ys):
@@ -57,6 +60,7 @@ def get_task_sampler(
         "sparse_linear_regression": SparseLinearRegression,
         "linear_classification": LinearClassification,
         "noisy_linear_regression": NoisyLinearRegression,
+        "dependent_linear_regression": DependentLinearRegression,
         "quadratic_regression": QuadraticRegression,
         "relu_2nn_regression": Relu2nnRegression,
         "decision_tree": DecisionTree,
@@ -195,6 +199,93 @@ class NoisyLinearRegression(LinearRegression):
             ys_b_noisy = ys_b_noisy * math.sqrt(self.n_dims) / ys_b_noisy.std()
 
         return ys_b_noisy
+
+
+class DependentLinearRegression(LinearRegression):
+    """Linear regression with dimension-normalized signal and controlled noise.
+
+    Amplitude SNR is ``1 / noise_std``; power SNR is its square. For standard
+    Gaussian feature marginals, E[(x.T w)**2] = 1 at every curriculum dimension.
+    Weights outside ``valid_coords`` are zero, and active weights have variance
+    ``1 / valid_coords``. ``w_b`` stores these effective, scaled weights.
+
+    Seeded tasks reproduce noise for repeated calls with the same shape. Noise
+    uses a separate seed stream from weights. Unseeded evaluations redraw noise;
+    callers should evaluate context labels once and reuse that draw for probes.
+    """
+
+    def __init__(
+        self,
+        n_dims,
+        batch_size,
+        pool_dict=None,
+        seeds=None,
+        snr=1.0,
+        noise_rho=0.0,
+        noise_rho_after=None,
+        noise_change_point=None,
+        valid_coords=None,
+    ):
+        if (
+            isinstance(snr, bool)
+            or not isinstance(snr, numbers.Real)
+            or math.isnan(snr)
+            or snr <= 0
+        ):
+            raise ValueError("snr must be positive (or positive infinity for noiseless data)")
+        if valid_coords is None:
+            valid_coords = n_dims
+        if (
+            isinstance(valid_coords, bool)
+            or not isinstance(valid_coords, numbers.Integral)
+            or not 1 <= valid_coords <= n_dims
+        ):
+            raise ValueError("valid_coords must be an integer between 1 and n_dims")
+        validate_ar1(noise_rho, noise_rho_after, noise_change_point)
+        if pool_dict is not None and len(pool_dict.get("w", [])) < batch_size:
+            raise ValueError("the weight pool must contain at least batch_size tasks")
+        super().__init__(n_dims, batch_size, pool_dict, seeds)
+        self.valid_coords = valid_coords
+        self.snr = float(snr)
+        self.noise_std = 1.0 / self.snr
+        self.noise_rho = noise_rho
+        self.noise_rho_after = noise_rho_after
+        self.noise_change_point = noise_change_point
+        self.w_b = self.w_b.clone() / math.sqrt(valid_coords)
+        self.w_b[:, valid_coords:] = 0
+
+    def evaluate_clean(self, xs_b):
+        w_b = self.w_b.to(device=xs_b.device, dtype=xs_b.dtype)
+        return (xs_b @ w_b)[:, :, 0]
+
+    def evaluate(self, xs_b):
+        clean = self.evaluate_clean(xs_b)
+        if self.noise_std == 0:
+            return clean
+        if self.seeds is None:
+            innovations = torch.randn_like(clean)
+        else:
+            if len(self.seeds) != clean.shape[0]:
+                raise ValueError("seed count must match the evaluation batch size")
+            # The offset separates noise from the legacy weight sampling stream.
+            # Generate on CPU so seeded tasks are reproducible across devices.
+            generator = torch.Generator()
+            innovations = torch.empty(clean.shape, dtype=clean.dtype)
+            for i, seed in enumerate(self.seeds):
+                generator.manual_seed((int(seed) + 0x5DEECE66D) % (2**63))
+                innovations[i] = torch.randn(
+                    clean.shape[1], generator=generator, dtype=clean.dtype
+                )
+            innovations = innovations.to(clean.device)
+        noise = ar1_from_innovations(
+            innovations, self.noise_rho, self.noise_rho_after, self.noise_change_point
+        )
+        return clean + self.noise_std * noise
+
+    def noise_correlation(self, n_points):
+        return temporal_correlation(
+            n_points, self.noise_rho, self.noise_rho_after, self.noise_change_point
+        )
 
 
 class QuadraticRegression(LinearRegression):

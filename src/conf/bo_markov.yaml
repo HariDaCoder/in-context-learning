@@ -1,0 +1,14 @@
+inherit:
+  - bo_iid.yaml
+
+# Stationary AR(1) context.  sqrt(1-rho^2) innovation scaling keeps every
+# x_t marginal exactly N(0, I), so rho is the only feature change from IID.
+training:
+  data_kwargs:
+    rho: 0.8
+
+out_dir: ../models/bo_markov
+
+wandb:
+  name: bo_ar1_rho08_snr2_seed0
+

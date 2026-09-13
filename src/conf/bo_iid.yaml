@@ -1,0 +1,29 @@
+inherit:
+  - base.yaml
+
+# IID control for the dependent-data experiments.  n_positions counts the
+# context plus the final independent query used during training.
+training:
+  task: dependent_linear_regression
+  task_kwargs:
+    snr: 2.0  # amplitude SNR; label-noise std = 1 / SNR
+    noise_rho: 0.0
+  data: gaussian_ar1
+  data_kwargs:
+    rho: 0.0
+  query_mode: independent
+  seed: 0
+  device: auto
+  eval_after_train: false  # use bo_experiment.py for clean-query BO metrics
+  curriculum:
+    points:
+      start: 11
+      end: 41
+      inc: 2
+      interval: 2000
+
+out_dir: ../models/bo_iid
+
+wandb:
+  name: bo_iid_snr2_seed0
+

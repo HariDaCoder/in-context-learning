@@ -9,6 +9,7 @@ dependencies:
   - pip:
     - jupyter==1.0.0
     - matplotlib==3.5.2
+    - munch==2.5.0
     - numpy==1.22.3
     - pandas==1.4.2
     - quinine==0.3.0

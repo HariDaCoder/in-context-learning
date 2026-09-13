@@ -39,6 +39,38 @@ are as follows (starting from `src`):
 - The `eval.ipynb` notebook contains code to load our own pre-trained models, plot the pre-computed metrics, and evaluate them on new data.
 - `train.py` takes as argument a configuration yaml from `conf` and trains the corresponding model. You can try `python train.py --config conf/toy.yaml` for a quick training run.
 
+## Dependent-data benign-overfitting experiments
+
+The extension in this fork adds stationary AR(1) and change-point Gaussian
+contexts while keeping every feature marginal equal to `N(0, I)`. It uses
+amplitude SNR (`noise_std = 1 / SNR`) and scales task weights so expected
+signal power stays one when dimension changes.
+
+- `src/conf/bo_iid.yaml`, `bo_markov.yaml`, and `bo_change_point.yaml` are
+  matched-distribution training examples.
+- `src/bo_experiment.py` evaluates fixed noisy contexts with minimum-norm OLS,
+  ridge, oracle GLS, and optional Transformer checkpoints.
+- `src/bo_eval.py` separates noisy-context fit, clean-query MSE, duplicate
+  retrieval, and a held-out linear probe of the Transformer's implied weight.
+- `src/bo_plot.py` produces SNR curves, phase heatmaps, effective-rank views,
+  and observed critical-SNR brackets without extrapolating unsampled points.
+- `src/run_bo_suite.py` runs the training and evaluation groups from any
+  repository checkout and records newly written checkpoint directories.
+- `src/conf/bo_sweep_phase.yaml` is the stationary feature-dependence grid;
+  the noise and forward/reverse change-point files isolate the other protocols.
+  These coarse grids skip linear probes; edit `bo_sweep_boundary.yaml` around
+  an observed crossing for the probe-based mechanism analysis.
+
+Run the small baseline protocol from the repository root:
+
+```
+python src/bo_experiment.py --config src/conf/bo_sweep.yaml --output results/bo_smoke.json
+python src/bo_plot.py results/bo_smoke.json --out-dir results/bo_figures
+```
+
+See `SERVER.md` for environment setup and batch commands on a compute server. The
+measurement definitions and staged scientific protocol are in `EXPERIMENTS.md`.
+
 # Maintainers
 * [Shivam Garg](https://cs.stanford.edu/~shivamg/)
 * [Dimitris Tsipras](https://dtsipras.com/)

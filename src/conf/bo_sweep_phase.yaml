@@ -1,0 +1,28 @@
+# Main stationary phase-boundary protocol. Start with baselines, then pass one
+# or more trained checkpoints via repeated --run-dir. This is intentionally
+# larger than bo_sweep.yaml and should normally run as a server batch job.
+n_dims: [20]
+context_lengths: [5, 10, 15, 19, 20, 21, 25, 40, 80]
+rhos: [0.0, 0.6, 0.9]
+snrs: [0.2, 0.8, 3.2, 12.8]
+eval_seeds: [1001, 1002, 1003]
+n_eval: 32
+batch_size: 16
+n_queries: 32
+n_probe_queries: 64
+n_probe_test_queries: 128
+linear_probe: false  # coarse direct BO scan; enable probes only around crossings
+query_batch_size: 256
+fit_threshold: 0.0001
+gen_threshold: 0.1
+linearity_threshold: 0.99
+baselines:
+  - ols
+  - kind: ridge
+    ridge_alpha: 1.0
+  - gls
+feature_rho_after: null
+feature_change_point: null
+noise_rho: 0.0
+noise_rho_after: null
+noise_change_point: null

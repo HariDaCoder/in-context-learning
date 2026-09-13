@@ -1,0 +1,15 @@
+inherit:
+  - bo_markov.yaml
+
+# Both feature rows and label noise have AR(1) dependence, with their
+# innovation streams sampled independently.
+training:
+  task_kwargs:
+    snr: 2.0
+    noise_rho: 0.8
+
+out_dir: ../models/bo_both_markov
+
+wandb:
+  name: bo_feature08_noise08_snr2_seed0
+

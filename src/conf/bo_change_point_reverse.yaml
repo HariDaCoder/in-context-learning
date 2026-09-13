@@ -1,0 +1,14 @@
+inherit:
+  - bo_iid.yaml
+
+# Reverse-order companion: 20 correlated then 19 IID transitions.
+training:
+  data_kwargs:
+    rho: 0.9
+    rho_after: 0.0
+    change_point: 21
+
+out_dir: ../models/bo_change_point_reverse
+
+wandb:
+  name: bo_change_09_to_0_snr2_seed0
