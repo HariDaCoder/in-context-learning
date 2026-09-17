@@ -23,7 +23,9 @@ def sample_training_batch(data_sampler, task_sampler, curriculum, bsize, query_m
     if query_mode != "independent":
         raise ValueError("query_mode must be 'causal' or 'independent'")
 
-    query = torch.randn(bsize, 1, xs.shape[-1], dtype=xs.dtype)
+    query = torch.randn(
+        bsize, 1, xs.shape[-1], dtype=xs.dtype, device=xs.device
+    )
     query[:, :, curriculum.n_dims_truncated:] = 0
     xs[:, -1:] = query
     context_ys = task.evaluate(xs[:, :-1])
@@ -31,4 +33,3 @@ def sample_training_batch(data_sampler, task_sampler, curriculum, bsize, query_m
     if task.noise_std:
         query_ys = query_ys + task.noise_std * torch.randn_like(query_ys)
     return xs, torch.cat((context_ys, query_ys), dim=1), task
-

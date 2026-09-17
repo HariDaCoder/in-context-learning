@@ -111,6 +111,121 @@ def _json_safe(value):
     return value
 
 
+def _precision_name(model):
+    """Return the arithmetic precision used by a model/estimator."""
+    if hasattr(model, "parameters"):
+        parameter = next(iter(model.parameters()), None)
+        if parameter is not None:
+            return str(parameter.dtype).removeprefix("torch.")
+    return str(torch.get_default_dtype()).removeprefix("torch.")
+
+
+def _gpu_name(device):
+    """Describe the selected CUDA device when evaluation actually uses it."""
+    selected_name = ("cuda" if torch.cuda.is_available() else "cpu") if device == "auto" else device
+    selected = torch.device(selected_name)
+    if selected.type != "cuda" or not torch.cuda.is_available():
+        return None
+    index = selected.index if selected.index is not None else torch.cuda.current_device()
+    return torch.cuda.get_device_name(index)
+
+
+def _same_value(left, right):
+    """Compare scalar protocol values, including infinity and null."""
+    if left is None or right is None:
+        return left is right
+    try:
+        return float(left) == float(right)
+    except (TypeError, ValueError):
+        return left == right
+
+
+def _distribution_metadata(metadata, config, rho, snr):
+    """Build auditable train/test distribution metadata for one result row.
+
+    Classical estimators are fitted on the condition itself, so their local
+    fitting distribution is recorded as matched.  For a saved model, the
+    pretraining distribution is read from its persisted training config.
+    Change-point details are included in the match decision even though the
+    requested short-form rho fields contain the initial correlation.
+    """
+    checkpoint = metadata["checkpoint_id"]
+    if checkpoint is None:
+        train_feature = {
+            "rho": rho,
+            "rho_after": config["feature_rho_after"],
+            "change_point": config["feature_change_point"],
+        }
+        train_noise = {
+            "rho": config["noise_rho"],
+            "rho_after": config["noise_rho_after"],
+            "change_point": config["noise_change_point"],
+        }
+        train_snr = snr
+        source = "condition_local_estimator"
+    else:
+        training = metadata.get("training_config", {})
+        data_kwargs = training.get("data_kwargs", {}) or {}
+        task_kwargs = training.get("task_kwargs", {}) or {}
+        train_feature = {
+            "rho": data_kwargs.get("rho"),
+            "rho_after": data_kwargs.get("rho_after"),
+            "change_point": data_kwargs.get("change_point"),
+        }
+        train_noise = {
+            "rho": task_kwargs.get("noise_rho", 0.0),
+            "rho_after": task_kwargs.get("noise_rho_after"),
+            "change_point": task_kwargs.get("noise_change_point"),
+        }
+        train_snr = task_kwargs.get("snr")
+        source = "checkpoint_config"
+
+    test_feature = {
+        "rho": rho,
+        "rho_after": config["feature_rho_after"],
+        "change_point": config["feature_change_point"],
+    }
+    test_noise = {
+        "rho": config["noise_rho"],
+        "rho_after": config["noise_rho_after"],
+        "change_point": config["noise_change_point"],
+    }
+    # "matched" refers specifically to dependence, the scientific protocol
+    # under study. Test SNR is deliberately swept around a fixed train SNR and
+    # is recorded separately; it must not relabel a dependence-matched row.
+    matched = all(
+        _same_value(train_side.get(key), test_side.get(key))
+        for train_side, test_side in ((train_feature, test_feature), (train_noise, test_noise))
+        for key in ("rho", "rho_after", "change_point")
+    )
+    signature = {
+        "feature": train_feature,
+        "noise": train_noise,
+        "snr": train_snr,
+        "source": source,
+    }
+    distribution_id = hashlib.sha256(
+        json.dumps(_json_safe(signature), sort_keys=True).encode()
+    ).hexdigest()[:16]
+    return {
+        "train_rho_x": train_feature["rho"],
+        "test_rho_x": rho,
+        "train_rho_e": train_noise["rho"],
+        "test_rho_e": config["noise_rho"],
+        "train_snr": train_snr,
+        "test_snr": snr,
+        "protocol": "matched" if matched else "shift",
+        "evaluation_protocol": "matched" if matched else "shift",
+        "train_distribution_id": distribution_id,
+        "train_distribution": signature,
+        "test_distribution": {
+            "feature": test_feature,
+            "noise": test_noise,
+            "snr": snr,
+        },
+    }
+
+
 def _checkpoint(path, config, device):
     # Lazy import keeps classical experiments independent of transformers/sklearn.
     from models import build_model
@@ -128,12 +243,15 @@ def _checkpoint(path, config, device):
     # original pinned PyTorch 1.11 stack, so keep this call for trusted checkpoints.
     state = torch.load(path / "state.pt", map_location="cpu")
     model.load_state_dict(state["model_state_dict"])
-    model.to(device).eval()
+    selected_device = ("cuda" if torch.cuda.is_available() else "cpu") if device == "auto" else device
+    model.to(selected_device).eval()
+    saved_training = training_config.get("training", {})
     metadata = {
         "model": model.name, "checkpoint_id": str(path),
-        "training_seed": training_config.get("training", {}).get("seed"),
-        "architecture": architecture, "training_config": training_config.get("training", {}),
+        "training_seed": saved_training.get("seed"),
+        "architecture": architecture, "training_config": saved_training,
         "train_step": state.get("train_step"),
+        "precision": saved_training.get("precision", _precision_name(model)),
     }
     return model, metadata
 
@@ -153,7 +271,9 @@ def _estimators(config):
             raise ValueError(f"Duplicate baseline name: {model.name}")
         names.add(model.name)
         models.append((model, {"model": model.name, "checkpoint_id": None,
-                               "training_seed": None, "estimator": arguments}))
+                               "training_seed": None, "estimator": arguments,
+                               "architecture": {"family": "classical", **arguments},
+                               "precision": _precision_name(model)}))
     return models
 
 
@@ -172,6 +292,8 @@ def summarize_metrics(batches):
 
 
 def run_sweep(config, run_dirs=(), device="cpu"):
+    if device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
     models = _estimators(config)
     models.extend(_checkpoint(path, config, device) for path in run_dirs)
     if not models:
@@ -187,6 +309,7 @@ def run_sweep(config, run_dirs=(), device="cpu"):
     protocol["query_distribution"] = "independent N(0,I_d), independent of context"
     protocol["snr_convention"] = "amplitude; sigma=1/snr; E[signal variance]=1"
     protocol_id = hashlib.sha256(json.dumps(protocol, sort_keys=True).encode()).hexdigest()[:16]
+    gpu_model = _gpu_name(device)
     records = []
     conditions = list(itertools.product(config["n_dims"], config["context_lengths"],
                                          config["rhos"], config["snrs"], config["eval_seeds"]))
@@ -230,11 +353,21 @@ def run_sweep(config, run_dirs=(), device="cpu"):
                         run_linear_probe=config["linear_probe"],
                     ))
         for (_, metadata), batches in zip(models, measurements):
+            distribution = _distribution_metadata(metadata, config, rho, snr)
             records.append({
                 "protocol_id": protocol_id, "model": metadata["model"],
                 "checkpoint_id": metadata["checkpoint_id"], "training_seed": metadata["training_seed"],
                 "seed": seed, "d": d, "k": k, "k_over_d": k / d,
                 "rho": rho, "snr": snr, "noise_std": 1 / snr, "n_eval": config["n_eval"],
+                # Explicit aliases make result rows self-contained and keep
+                # the older seed/rho/snr/checkpoint_id fields readable.
+                "train_seed": metadata["training_seed"], "eval_seed": seed,
+                "context_length": k,
+                "architecture": metadata["architecture"],
+                "gpu_model": gpu_model, "precision": metadata["precision"],
+                "evaluation_device": str(device),
+                "checkpoint_path": metadata["checkpoint_id"],
+                **distribution,
                 "effective_rank": float(temporal_effective_rank(
                     k, rho=rho, rho_after=config["feature_rho_after"],
                     change_point=config["feature_change_point"])),
@@ -249,6 +382,10 @@ def run_sweep(config, run_dirs=(), device="cpu"):
             "config": config, "protocol": protocol, "protocol_id": protocol_id,
             "models": [metadata for _, metadata in models],
             "torch_version": str(torch.__version__),
+            "gpu_model": gpu_model,
+            "evaluation_device": str(device),
+            "precision_note": "checkpoint rows record saved training precision; classical rows record default tensor dtype",
+            "distribution_metadata_version": 1,
             "seed_protocol": "SHA256 bo-evaluation-v1 streams; rho/SNR excluded for matched draws; k/d included",
             "uncertainty": "metric std is across tasks; plots compute approximate 95% CIs across eval seed means per checkpoint",
             "nonfinite_encoding": "noiseless SNR='inf'; unavailable metric summaries=null; n_finite records exclusions",

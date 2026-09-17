@@ -6,7 +6,12 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from bo_plot import critical_snr_brackets, summarize_training_replicates
+from bo_plot import (
+    critical_snr_brackets,
+    load_groups,
+    propose_snr_boundary,
+    summarize_training_replicates,
+)
 
 
 def _record(value):
@@ -42,6 +47,50 @@ class BOPlotTests(unittest.TestCase):
         self.assertEqual(result["brackets"][0]["direction"], "upward")
         self.assertEqual(result["brackets"][1]["direction"], "downward")
         self.assertFalse(result["unique_critical_snr_estimated"])
+
+    def test_boundary_proposal_refines_every_nonmonotonic_crossing(self):
+        result = propose_snr_boundary([(1, 0.2), (2, 0.8), (8, 0.1)], target=0.5)
+        self.assertEqual(result["action"], "refine_all_observed_crossings")
+        self.assertEqual(len(result["brackets"]), 2)
+        self.assertEqual(result["suggested_snrs"], [2 ** 0.5, 4.0])
+
+    def test_boundary_proposal_expands_from_closest_edge_when_no_crossing(self):
+        result = propose_snr_boundary([(1, 0.1), (2, 0.2), (4, 0.4)], target=0.5)
+        self.assertEqual(result["action"], "expand_from_closest_edge")
+        self.assertEqual(result["closest_sampled_points"][0]["snr"], 4.0)
+        self.assertEqual(result["suggested_snrs"], [8.0])
+
+    def test_legacy_and_metadata_aware_outputs_cannot_be_merged(self):
+        import json
+        import tempfile
+
+        legacy_record = {
+            "protocol_id": "p", "model": "ols", "checkpoint_id": None,
+            "training_seed": None, "seed": 1, "d": 2, "rho": 0.0,
+            "snr": 1.0, "k": 2, "metrics": {},
+        }
+        aware_record = {
+            **legacy_record,
+            "train_rho_x": 0.0, "test_rho_x": 0.0,
+            "train_rho_e": 0.0, "test_rho_e": 0.0,
+            "protocol": "matched", "evaluation_protocol": "matched", "train_seed": None,
+            "eval_seed": 1, "train_snr": 1.0, "test_snr": 1.0,
+            "architecture": {"family": "classical"}, "gpu_model": None,
+            "precision": "float32", "checkpoint_path": None,
+            "train_distribution_id": "local", "train_distribution": {},
+            "test_distribution": {}, "context_length": 2,
+        }
+        metadata = {"protocol": {"linear_probe": False}}
+        with tempfile.TemporaryDirectory() as directory:
+            legacy = Path(directory) / "legacy.json"
+            aware = Path(directory) / "aware.json"
+            legacy.write_text(json.dumps({"schema_version": 1, "metadata": metadata,
+                                          "records": [legacy_record]}))
+            aware.write_text(json.dumps({"schema_version": 1,
+                                         "metadata": {**metadata, "distribution_metadata_version": 1},
+                                         "records": [aware_record]}))
+            with self.assertRaisesRegex(ValueError, "Cannot combine legacy"):
+                load_groups([legacy, aware])
 
     def test_training_runs_are_equal_weight_after_eval_seed_averaging(self):
         groups = [

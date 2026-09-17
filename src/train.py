@@ -1,5 +1,7 @@
 import os
+import json
 import random
+import time
 import uuid
 
 from quinine import QuinineArgumentParser
@@ -17,12 +19,20 @@ from training_data import sample_training_batch
 torch.backends.cudnn.benchmark = True
 
 
-def train_step(model, xs, ys, optimizer, loss_func):
+def train_step(model, xs, ys, optimizer, loss_func, precision="float32", scaler=None):
     optimizer.zero_grad()
-    output = model(xs, ys)
-    loss = loss_func(output, ys)
-    loss.backward()
-    optimizer.step()
+    use_amp = xs.device.type == "cuda" and precision != "float32"
+    amp_dtype = torch.float16 if precision == "float16" else torch.bfloat16
+    with torch.cuda.amp.autocast(enabled=use_amp, dtype=amp_dtype):
+        output = model(xs, ys)
+        loss = loss_func(output, ys)
+    if scaler is not None and scaler.is_enabled():
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+    else:
+        loss.backward()
+        optimizer.step()
     return loss.detach().item(), output.detach()
 
 
@@ -64,29 +74,61 @@ def validate_training_config(args):
             raise ValueError(
                 "independent query mode currently assumes N(0,I) feature marginals"
             )
+    if training.max_context is not None:
+        if training.max_context < 1:
+            raise ValueError("training.max_context must be positive")
+        required_positions = training.max_context + (
+            1 if training.query_mode == "independent" else 0
+        )
+        if required_positions > model.n_positions:
+            raise ValueError(
+                "training.max_context plus the query exceeds model.n_positions"
+            )
+        if training.curriculum.points.end > required_positions:
+            raise ValueError("point curriculum exceeds training.max_context")
     try:
         device = torch.device(training.device if training.device != "auto" else "cpu")
     except (TypeError, RuntimeError, ValueError) as error:
         raise ValueError(f"invalid training device: {training.device}") from error
     if device.type not in {"cpu", "cuda"}:
         raise ValueError("training device must be auto, cpu, cuda, or cuda:<index>")
+    if training.precision != "float32" and device.type != "cuda" and training.device != "auto":
+        raise ValueError("float16/bfloat16 training requires CUDA")
 
 
 def train(model, args):
     device = next(model.parameters()).device
+    wall_start = time.perf_counter()
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
     log_enabled = not args.test_run and args.wandb.mode != "disabled"
     if log_enabled:
         import wandb
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.training.learning_rate)
+    scaler = torch.cuda.amp.GradScaler(
+        enabled=device.type == "cuda" and args.training.precision == "float16"
+    )
     curriculum = Curriculum(args.training.curriculum)
 
     starting_step = 0
     state_path = os.path.join(args.out_dir, "state.pt")
     if os.path.exists(state_path):
         state = torch.load(state_path, map_location=device)
+        expected_id = args.training.experiment_id
+        if expected_id is not None and state.get("experiment_id") != expected_id:
+            raise ValueError(
+                "resumable checkpoint experiment_id does not match the requested run"
+            )
+        saved_precision = state.get("precision")
+        if saved_precision is not None and saved_precision != args.training.precision:
+            raise ValueError(
+                "resumable checkpoint precision does not match the requested run"
+            )
         model.load_state_dict(state["model_state_dict"])
         optimizer.load_state_dict(state["optimizer_state_dict"])
+        if state.get("grad_scaler_state_dict") and scaler.is_enabled():
+            scaler.load_state_dict(state["grad_scaler_state_dict"])
         starting_step = state["train_step"] + 1
         for i in range(state["train_step"] + 1):
             curriculum.update()
@@ -112,6 +154,7 @@ def train(model, args):
         num_tasks=args.training.num_tasks,
         **args.training.task_kwargs,
     )
+    sample_device = device if args.training.data_device == "model" else torch.device("cpu")
     pbar = tqdm(range(starting_step, args.training.train_steps))
 
     num_training_examples = args.training.num_training_examples
@@ -120,11 +163,15 @@ def train(model, args):
         data_sampler_args = {}
         task_sampler_args = {}
 
+        data_sampler_args["device"] = sample_device
+
         if (
             "sparse" in args.training.task
             or args.training.task == "dependent_linear_regression"
         ):
             task_sampler_args["valid_coords"] = curriculum.n_dims_truncated
+        if args.training.task == "dependent_linear_regression":
+            task_sampler_args["device"] = sample_device
         if num_training_examples is not None:
             assert num_training_examples >= bsize
             seeds = sample_seeds(num_training_examples, bsize)
@@ -143,8 +190,17 @@ def train(model, args):
 
         loss_func = task.get_training_metric()
 
-        xs_device, ys_device = xs.to(device), ys.to(device)
-        loss, output = train_step(model, xs_device, ys_device, optimizer, loss_func)
+        xs_device = xs.to(device, non_blocking=True)
+        ys_device = ys.to(device, non_blocking=True)
+        loss, output = train_step(
+            model,
+            xs_device,
+            ys_device,
+            optimizer,
+            loss_func,
+            precision=args.training.precision,
+            scaler=scaler,
+        )
 
         point_wise_tags = list(range(curriculum.n_points))
         point_wise_loss_func = task.get_metric()
@@ -190,7 +246,10 @@ def train(model, args):
             training_state = {
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
+                "grad_scaler_state_dict": scaler.state_dict() if scaler.is_enabled() else None,
                 "train_step": i,
+                "experiment_id": args.training.experiment_id,
+                "precision": args.training.precision,
                 "torch_rng_state": torch.get_rng_state(),
                 "python_rng_state": random.getstate(),
                 "cuda_rng_state": (
@@ -209,6 +268,51 @@ def train(model, args):
         ):
             torch.save(model.state_dict(), os.path.join(args.out_dir, f"model_{i}.pt"))
 
+    if not args.test_run:
+        wall_time = time.perf_counter() - wall_start
+        steps_completed = max(args.training.train_steps - starting_step, 0)
+        final_path = os.path.join(args.out_dir, "final.pt")
+        temporary_final_path = final_path + ".tmp"
+        torch.save(
+            {
+                "model_state_dict": model.state_dict(),
+                "train_step": args.training.train_steps - 1,
+                "experiment_id": args.training.experiment_id,
+                "precision": args.training.precision,
+            },
+            temporary_final_path,
+        )
+        os.replace(temporary_final_path, final_path)
+        completed_path = os.path.join(args.out_dir, "completed.json")
+        with open(completed_path + ".tmp", "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "experiment_id": args.training.experiment_id,
+                    "train_step": args.training.train_steps - 1,
+                    "steps_completed_this_invocation": steps_completed,
+                    "wall_time_seconds": wall_time,
+                    "steps_per_second": (
+                        steps_completed / wall_time if wall_time > 0 else None
+                    ),
+                    "device": str(device),
+                    "gpu_model": (
+                        torch.cuda.get_device_name(device) if device.type == "cuda" else None
+                    ),
+                    "precision": args.training.precision,
+                    "data_device": args.training.data_device,
+                    "max_cuda_memory_bytes": (
+                        torch.cuda.max_memory_allocated(device)
+                        if device.type == "cuda"
+                        else None
+                    ),
+                    "final_checkpoint": "final.pt",
+                    "resumable_checkpoint": "state.pt",
+                },
+                handle,
+                indent=2,
+            )
+        os.replace(completed_path + ".tmp", completed_path)
+
 
 def main(args):
     validate_training_config(args)
@@ -222,6 +326,8 @@ def main(args):
     device = torch.device(device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA training requested, but CUDA is unavailable")
+    if args.training.precision != "float32" and device.type != "cuda":
+        raise RuntimeError("float16/bfloat16 training requires CUDA")
 
     if args.test_run:
         curriculum_args = args.training.curriculum

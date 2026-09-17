@@ -94,6 +94,22 @@ class BOEvaluationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "positive definite"):
             LinearEstimator("gls").fit(xs, ys, torch.ones(2, 2, dtype=self.dtype))
 
+    def test_oracle_gls_improves_average_parameter_risk_for_correlated_noise(self):
+        torch.manual_seed(8127)
+        batch, k, d, rho = 600, 24, 3, 0.9
+        xs = torch.randn(batch, k, d, dtype=self.dtype)
+        weights = torch.randn(batch, d, 1, dtype=self.dtype)
+        positions = torch.arange(k)
+        covariance = rho ** (positions[:, None] - positions[None, :]).abs().to(self.dtype)
+        factor = torch.linalg.cholesky(covariance)
+        noise = (factor @ torch.randn(batch, k, 1, dtype=self.dtype)).squeeze(-1)
+        ys = (xs @ weights).squeeze(-1) + noise
+        ols = LinearEstimator("ols").fit(xs, ys).weights_
+        gls = LinearEstimator("gls").fit(xs, ys, covariance).weights_
+        ols_risk = (ols - weights.squeeze(-1)).square().sum(dim=1).mean()
+        gls_risk = (gls - weights.squeeze(-1)).square().sum(dim=1).mean()
+        self.assertLess(gls_risk.item(), 0.7 * ols_risk.item())
+
     def test_classical_reports_true_parameter_risk(self):
         xs = torch.tensor([[[1., 0.]]], dtype=self.dtype)
         ys = torch.tensor([[2.]], dtype=self.dtype)

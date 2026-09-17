@@ -50,6 +50,11 @@ EVALUATION_PRESETS = {
     ),
 }
 
+# Scientific group names are deliberately independent of the machine that runs
+# them.  Resource assignment belongs in the launch instructions, not in stable
+# experiment IDs or persisted manifests.
+MATRIX_GROUPS = ("architecture", "canonical", "dimension", "matched_rho", "stage0")
+
 
 def _preset_items(presets, name):
     """Expand one named preset while preserving order and removing duplicates."""
@@ -227,6 +232,207 @@ def run_smoke(args):
     _run(plot_command, cwd=REPOSITORY_ROOT, dry_run=args.dry_run)
 
 
+def _print_json(document):
+    print(json.dumps(document, indent=2, sort_keys=True), flush=True)
+
+
+def _matrix_plan_summary(plan):
+    return {
+        "group": plan.group,
+        "counts": plan.counts,
+        "device": plan.device,
+        "precision": plan.precision,
+        "max_concurrent": plan.max_concurrent,
+        "resume": plan.resume,
+        "manifest_json": _display_path(plan.manifest_json) if plan.manifest_json else None,
+        "manifest_csv": _display_path(plan.manifest_csv) if plan.manifest_csv else None,
+        "plan_json": _display_path(plan.summary_path),
+    }
+
+
+def _training_concurrency(args):
+    if args.max_concurrent is not None:
+        return args.max_concurrent
+    if args.matrix_manifest is not None:
+        return 1
+    from bo_matrix_train import recommended_concurrency
+
+    return recommended_concurrency(args.group) or 1
+
+
+def run_matrix_plan(args):
+    from bo_matrix_train import plan_group, plan_manifest
+
+    planner = plan_manifest if args.matrix_manifest is not None else plan_group
+    source = args.matrix_manifest if args.matrix_manifest is not None else args.group
+    plan = planner(
+        source,
+        device=args.device,
+        precision=args.precision,
+        max_concurrent=_training_concurrency(args),
+        resume=args.resume,
+    )
+    _print_json(_matrix_plan_summary(plan))
+
+
+def run_matrix_training(args):
+    from bo_matrix_train import train_group, train_manifest
+
+    trainer = train_manifest if args.matrix_manifest is not None else train_group
+    source = args.matrix_manifest if args.matrix_manifest is not None else args.group
+    summary = trainer(
+        source,
+        device=args.device,
+        precision=args.precision,
+        max_concurrent=_training_concurrency(args),
+        dry_run=args.dry_run,
+        resume=args.resume,
+    )
+    _print_json(summary.as_dict(REPOSITORY_ROOT))
+    if not summary.success:
+        raise RuntimeError(
+            "Matrix training contains failed, blocked, or locked experiments; "
+            "inspect {}".format(_display_path(summary.summary_path))
+        )
+
+
+def run_matrix_evaluation(args):
+    from bo_matrix_eval import main as matrix_evaluation_main
+
+    command = []
+    for group in args.group:
+        command.extend(("--group", group))
+    for manifest in args.matrix_manifest:
+        command.extend(("--matrix-manifest", str(manifest)))
+    for experiment_id in args.experiment_id:
+        command.extend(("--experiment-id", experiment_id))
+    command.extend((
+        "--protocol", args.protocol,
+        "--n-eval", str(args.n_eval),
+        "--batch-size", str(args.batch_size),
+        "--device", args.device,
+        "--max-workers", str(args.max_concurrent),
+        "--output-root", str(args.output_root),
+    ))
+    for flag, values in (
+        ("--snr", args.snr),
+        ("--eval-seed", args.eval_seed),
+        ("--k-over-d", args.k_over_d),
+        ("--shift-rho", args.shift_rho),
+    ):
+        for value in values:
+            command.extend((flag, str(value)))
+    for path in args.boundary_suggestions:
+        command.extend(("--boundary-suggestions", str(path)))
+    if args.no_baselines:
+        command.append("--no-baselines")
+    if args.no_plot:
+        command.append("--no-plot")
+    if args.summary_only:
+        command.append("--summary-only")
+    if args.force:
+        command.append("--force")
+    if args.dry_run:
+        command.append("--dry-run")
+    return matrix_evaluation_main(command)
+
+
+def run_matrix_benchmark(args):
+    from bo_matrix_train import benchmark_group
+
+    report = benchmark_group(
+        args.group,
+        device=args.device,
+        precision=args.precision,
+        concurrency_values=args.max_concurrent,
+        steps=args.steps,
+        dry_run=args.dry_run,
+        resume=args.resume,
+    )
+    _print_json(report)
+
+
+def run_parameter_match(args):
+    from bo_architecture import ArchitectureSpec
+    from bo_architecture_runner import parameter_match_report
+
+    result = parameter_match_report(
+        output_dir=args.output_dir,
+        target=ArchitectureSpec(
+            args.target_width,
+            args.target_depth,
+            args.target_heads,
+            sweep_family="standard",
+        ),
+        depths=args.depths,
+        width_min=args.width_min,
+        width_max=args.width_max,
+        width_step=args.width_step,
+        n_dims=args.n_dims,
+        max_context=args.max_context,
+        precision=args.precision,
+        dry_run=args.dry_run,
+    )
+    _print_json({
+        "status": "planned" if result.dry_run else "complete",
+        "report_id": result.plan["report_id"],
+        "search_model_instantiations": result.plan["search_model_instantiations"],
+        "match_count": len(result.matches),
+        "training_experiment_count": (
+            len(result.experiments)
+            if not result.dry_run
+            else result.plan["planned_training_experiment_count"]
+        ),
+        "json_path": _display_path(result.json_path),
+        "csv_path": _display_path(result.csv_path),
+    })
+
+
+def run_mechanism(args):
+    from bo_architecture_runner import mechanism_evaluation
+
+    result = mechanism_evaluation(
+        checkpoint_dir=args.checkpoint_dir,
+        output_csv=args.output_csv,
+        rhos=args.rho,
+        snrs=args.snr,
+        context_lengths=args.context_length,
+        eval_seeds=args.eval_seed,
+        n_eval=args.n_eval,
+        batch_size=args.batch_size,
+        device=args.device,
+        query_positions=args.query_positions,
+        dry_run=args.dry_run,
+    )
+    _print_json(result)
+
+
+def run_scaling_analysis(args):
+    from bo_scaling import write_scaling_report
+
+    report = write_scaling_report(
+        inputs=args.input,
+        output=args.output,
+        target=args.target_probability,
+        figures_dir=args.figures_dir,
+    )
+    _print_json({
+        "output": _display_path(_repository_path(args.output)),
+        "observation_count": len(report["observations"]),
+        "excluded_condition_count": len(report["excluded_conditions"]),
+        "fit_status": report["fit"]["status"],
+        "figures": report["figures"],
+    })
+
+
+def _add_resume_arguments(parser):
+    parser.set_defaults(resume=True)
+    parser.add_argument("--resume", dest="resume", action="store_true",
+                        help="Resume interrupted experiments (default)")
+    parser.add_argument("--no-resume", dest="resume", action="store_false",
+                        help="Block instead of resuming an interrupted experiment")
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -282,13 +488,169 @@ def build_parser():
     evaluate.add_argument("--log-y", action="store_true")
     evaluate.add_argument("--dry-run", action="store_true")
     evaluate.set_defaults(function=run_evaluation)
+
+    plan = commands.add_parser(
+        "plan", help="Expand a deterministic matrix group and write its manifests"
+    )
+    plan_source = plan.add_mutually_exclusive_group(required=True)
+    plan_source.add_argument("--group", choices=MATRIX_GROUPS)
+    plan_source.add_argument(
+        "--matrix-manifest", type=Path,
+        help="Matrix manifest or parameter-match report to plan",
+    )
+    plan.add_argument("--device", default="auto")
+    plan.add_argument(
+        "--precision", choices=("float32", "float16", "bfloat16"), default=None,
+        help="Override precision; this changes semantic experiment IDs",
+    )
+    plan.add_argument(
+        "--max-concurrent", type=int, default=None,
+        help="Process count; defaults to the latest successful group benchmark, then 1",
+    )
+    _add_resume_arguments(plan)
+    plan.set_defaults(function=run_matrix_plan)
+
+    matrix_train = commands.add_parser(
+        "train-matrix", help="Train, resume, or skip a deterministic matrix group"
+    )
+    matrix_train_source = matrix_train.add_mutually_exclusive_group(required=True)
+    matrix_train_source.add_argument("--group", choices=MATRIX_GROUPS)
+    matrix_train_source.add_argument(
+        "--matrix-manifest", type=Path,
+        help="Matrix manifest or parameter-match report to train",
+    )
+    matrix_train.add_argument("--device", default="auto")
+    matrix_train.add_argument(
+        "--precision", choices=("float32", "float16", "bfloat16"), default=None,
+        help="Override precision; this changes semantic experiment IDs",
+    )
+    matrix_train.add_argument(
+        "--max-concurrent", type=int, default=None,
+        help="Process count; defaults to the latest successful group benchmark, then 1",
+    )
+    matrix_train.add_argument("--dry-run", action="store_true")
+    _add_resume_arguments(matrix_train)
+    matrix_train.set_defaults(function=run_matrix_training)
+
+    matrix_evaluate = commands.add_parser(
+        "evaluate-matrix",
+        help="Evaluate matrix checkpoints with dependence-matched and/or shift protocols",
+    )
+    matrix_evaluate.add_argument(
+        "--group", action="append", choices=MATRIX_GROUPS, default=[],
+        help="Scientific matrix group; repeat to combine groups",
+    )
+    matrix_evaluate.add_argument(
+        "--matrix-manifest", action="append", type=Path, default=[],
+        help="Manifest containing training experiments; repeatable",
+    )
+    matrix_evaluate.add_argument("--experiment-id", action="append", default=[])
+    matrix_evaluate.add_argument(
+        "--protocol", choices=("matched", "shift", "all"), default="matched"
+    )
+    matrix_evaluate.add_argument("--snr", action="append", type=float, default=[])
+    matrix_evaluate.add_argument("--eval-seed", action="append", type=int, default=[])
+    matrix_evaluate.add_argument("--k-over-d", action="append", type=float, default=[])
+    matrix_evaluate.add_argument("--shift-rho", action="append", type=float, default=[])
+    matrix_evaluate.add_argument(
+        "--boundary-suggestions", action="append", type=Path, default=[],
+        help="Use follow-up SNR samples from boundary_suggestions.json; repeatable",
+    )
+    matrix_evaluate.add_argument("--n-eval", type=int, default=32)
+    matrix_evaluate.add_argument("--batch-size", type=int, default=16)
+    matrix_evaluate.add_argument("--device", default="cpu")
+    matrix_evaluate.add_argument("--max-concurrent", type=int, default=1)
+    matrix_evaluate.add_argument(
+        "--output-root", type=Path,
+        default=Path("results") / "bo_matrix" / "evaluation",
+    )
+    matrix_evaluate.add_argument("--no-baselines", action="store_true")
+    matrix_evaluate.add_argument("--no-plot", action="store_true")
+    matrix_evaluate.add_argument("--summary-only", action="store_true")
+    matrix_evaluate.add_argument("--force", action="store_true")
+    matrix_evaluate.add_argument("--dry-run", action="store_true")
+    matrix_evaluate.set_defaults(function=run_matrix_evaluation)
+
+    benchmark = commands.add_parser(
+        "benchmark", help="Benchmark independent experiment concurrency with short runs"
+    )
+    benchmark.add_argument("--group", choices=MATRIX_GROUPS, default="stage0")
+    benchmark.add_argument("--device", default="auto")
+    benchmark.add_argument(
+        "--precision", choices=("float32", "float16", "bfloat16"), default=None
+    )
+    benchmark.add_argument(
+        "--max-concurrent", type=int, nargs="+", default=[1, 2, 4],
+        help="Concurrency values to benchmark",
+    )
+    benchmark.add_argument("--steps", type=int, default=2000)
+    benchmark.add_argument("--dry-run", action="store_true")
+    _add_resume_arguments(benchmark)
+    benchmark.set_defaults(function=run_matrix_benchmark)
+
+    parameter_match = commands.add_parser(
+        "parameter-match", help="Find exact-count parameter-matched depth variants"
+    )
+    parameter_match.add_argument(
+        "--output-dir", type=Path,
+        default=REPOSITORY_ROOT / "results" / "bo_matrix" / "parameter_match",
+    )
+    parameter_match.add_argument("--target-width", type=int, default=256)
+    parameter_match.add_argument("--target-depth", type=int, default=12)
+    parameter_match.add_argument("--target-heads", type=int, default=8)
+    parameter_match.add_argument("--depths", type=int, nargs="+", default=[2, 4, 6, 12])
+    parameter_match.add_argument("--width-min", type=int, default=32)
+    parameter_match.add_argument("--width-max", type=int, default=768)
+    parameter_match.add_argument("--width-step", type=int, default=8)
+    parameter_match.add_argument("--n-dims", type=int, default=20)
+    parameter_match.add_argument("--max-context", type=int, default=80)
+    parameter_match.add_argument(
+        "--precision", choices=("float32", "float16", "bfloat16"), default="float32"
+    )
+    parameter_match.add_argument("--dry-run", action="store_true")
+    parameter_match.set_defaults(function=run_parameter_match)
+
+    mechanism = commands.add_parser(
+        "mechanism", help="Compute online aggregate attention diagnostics"
+    )
+    mechanism.add_argument("--checkpoint-dir", type=Path, required=True)
+    mechanism.add_argument("--output-csv", type=Path, required=True)
+    mechanism.add_argument("--rho", type=float, nargs="+", default=[0.0, 0.6, 0.9])
+    mechanism.add_argument("--snr", type=float, nargs="+", default=[0.8, 3.2])
+    mechanism.add_argument(
+        "--context-length", type=int, nargs="+", default=[20, 40, 80]
+    )
+    mechanism.add_argument(
+        "--eval-seed", type=int, nargs="+", default=[1001, 1002, 1003]
+    )
+    mechanism.add_argument("--n-eval", type=int, default=32)
+    mechanism.add_argument("--batch-size", type=int, default=16)
+    mechanism.add_argument("--device", default="auto")
+    mechanism.add_argument(
+        "--query-positions", choices=("last_x", "all_x", "all_y", "all"),
+        default="last_x",
+    )
+    mechanism.add_argument("--dry-run", action="store_true")
+    mechanism.set_defaults(function=run_mechanism)
+
+    scaling = commands.add_parser(
+        "analyze-scaling", help="Fit the explicitly exploratory critical-SNR scaling model"
+    )
+    scaling.add_argument("--input", action="append", type=Path, required=True)
+    scaling.add_argument(
+        "--output", type=Path,
+        default=REPOSITORY_ROOT / "results" / "bo_matrix" / "scaling.json",
+    )
+    scaling.add_argument("--figures-dir", type=Path, default=None)
+    scaling.add_argument("--target-probability", type=float, default=0.5)
+    scaling.set_defaults(function=run_scaling_analysis)
     return parser
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    args.function(args)
+    return args.function(args)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

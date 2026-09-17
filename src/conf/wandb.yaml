@@ -1,6 +1,6 @@
 wandb:
     mode: online  # set to disabled for checkpoint-only runs
     project: in-context-training
-    entity: your-entity
+    entity: hai-trinh220970-ho-chi-minh-city-university-of-technology
     notes:
     log_every_steps: 100

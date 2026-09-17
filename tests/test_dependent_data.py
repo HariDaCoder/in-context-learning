@@ -61,6 +61,9 @@ class DependentDataTests(unittest.TestCase):
             temporal_effective_rank(41, 0.9, 0.0, 21),
             places=12,
         )
+        forward_80 = temporal_correlation(80, rho=0.0, rho_after=0.9, change_point=40)
+        reverse_80 = temporal_correlation(80, rho=0.9, rho_after=0.0, change_point=41)
+        torch.testing.assert_close(forward_80, reverse_80.flip((0, 1)))
 
     def test_seeded_batch_permutation_scale_bias_and_truncation(self):
         scale = torch.diag(torch.tensor([1.0, 2.0, 3.0]))
@@ -137,6 +140,19 @@ class DependentDataTests(unittest.TestCase):
         for valid_coords in [0, 4, 1.5, True]:
             with self.subTest(valid_coords=valid_coords), self.assertRaises(ValueError):
                 DependentLinearRegression(3, 2, valid_coords=valid_coords)
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required for generator comparison")
+    def test_cpu_and_gpu_ar1_generators_have_same_distribution(self):
+        n = 30000
+        rho = 0.8
+        sampler = get_data_sampler("gaussian_ar1", 1, rho=rho)
+        torch.manual_seed(144)
+        cpu = sampler.sample_xs(4, n, device="cpu").squeeze(-1).double()
+        torch.cuda.manual_seed_all(144)
+        gpu = sampler.sample_xs(4, n, device="cuda").squeeze(-1).double().cpu()
+        for draws in (cpu, gpu):
+            self.assertAlmostEqual(draws.square().mean().item(), 1.0, delta=0.03)
+            self.assertAlmostEqual((draws[:, :-1] * draws[:, 1:]).mean().item(), rho, delta=0.03)
 
 
 if __name__ == "__main__":

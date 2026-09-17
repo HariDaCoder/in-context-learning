@@ -78,24 +78,32 @@ def get_task_sampler(
 
 
 class LinearRegression(Task):
-    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1):
+    def __init__(
+        self, n_dims, batch_size, pool_dict=None, seeds=None, scale=1, device=None
+    ):
         """scale: a constant by which to scale the randomly sampled weights."""
         super(LinearRegression, self).__init__(n_dims, batch_size, pool_dict, seeds)
         self.scale = scale
 
+        target_device = torch.device("cpu" if device is None else device)
         if pool_dict is None and seeds is None:
-            self.w_b = torch.randn(self.b_size, self.n_dims, 1)
+            self.w_b = torch.randn(
+                self.b_size, self.n_dims, 1, device=target_device
+            )
         elif seeds is not None:
+            # Preserve the historical per-task CPU generator stream for
+            # explicitly seeded finite datasets, then move the small tensor.
             self.w_b = torch.zeros(self.b_size, self.n_dims, 1)
             generator = torch.Generator()
             assert len(seeds) == self.b_size
             for i, seed in enumerate(seeds):
                 generator.manual_seed(seed)
                 self.w_b[i] = torch.randn(self.n_dims, 1, generator=generator)
+            self.w_b = self.w_b.to(target_device)
         else:
             assert "w" in pool_dict
             indices = torch.randperm(len(pool_dict["w"]))[:batch_size]
-            self.w_b = pool_dict["w"][indices]
+            self.w_b = pool_dict["w"][indices].to(target_device)
 
     def evaluate(self, xs_b):
         w_b = self.w_b.to(xs_b.device)
@@ -225,6 +233,7 @@ class DependentLinearRegression(LinearRegression):
         noise_rho_after=None,
         noise_change_point=None,
         valid_coords=None,
+        device=None,
     ):
         if (
             isinstance(snr, bool)
@@ -244,7 +253,7 @@ class DependentLinearRegression(LinearRegression):
         validate_ar1(noise_rho, noise_rho_after, noise_change_point)
         if pool_dict is not None and len(pool_dict.get("w", [])) < batch_size:
             raise ValueError("the weight pool must contain at least batch_size tasks")
-        super().__init__(n_dims, batch_size, pool_dict, seeds)
+        super().__init__(n_dims, batch_size, pool_dict, seeds, device=device)
         self.valid_coords = valid_coords
         self.snr = float(snr)
         self.noise_std = 1.0 / self.snr

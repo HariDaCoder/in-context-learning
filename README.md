@@ -54,12 +54,22 @@ signal power stays one when dimension changes.
   retrieval, and a held-out linear probe of the Transformer's implied weight.
 - `src/bo_plot.py` produces SNR curves, phase heatmaps, effective-rank views,
   and observed critical-SNR brackets without extrapolating unsampled points.
-- `src/run_bo_suite.py` runs the training and evaluation groups from any
-  repository checkout and records newly written checkpoint directories.
+- `src/bo_matrix.py` expands deterministic scientific groups, assigns stable
+  semantic experiment IDs, and writes JSON/CSV manifests.
+- `src/bo_matrix_train.py` adds checkpoint reuse, resume/skip state, failure
+  logs, per-experiment locks, and bounded multi-process concurrency.
+- `src/bo_matrix_eval.py` keeps dependence-matched and dependence-shift jobs
+  separate while sharing compatible classical-baseline evaluations.
+- `src/bo_architecture.py`, `src/bo_architecture_runner.py`, and
+  `src/bo_mechanism.py` implement architecture families, instantiated
+  parameter matching, and evaluation-only online attention summaries.
+- `src/run_bo_suite.py` exposes both the original commands and the matrix
+  workflow from any repository checkout.
 - `src/conf/bo_sweep_phase.yaml` is the stationary feature-dependence grid;
   the noise and forward/reverse change-point files isolate the other protocols.
-  These coarse grids skip linear probes; edit `bo_sweep_boundary.yaml` around
-  an observed crossing for the probe-based mechanism analysis.
+  These coarse grids skip linear probes. `bo_plot.py` writes
+  `boundary_suggestions.json`, which the architecture evaluator can consume
+  directly without assuming a monotone phase curve.
 
 Run the small baseline protocol from the repository root:
 
@@ -68,7 +78,18 @@ python src/bo_experiment.py --config src/conf/bo_sweep.yaml --output results/bo_
 python src/bo_plot.py results/bo_smoke.json --out-dir results/bo_figures
 ```
 
-See `SERVER.md` for environment setup and batch commands on a compute server. The
+Preview the deterministic experiment groups without training:
+
+```bash
+python src/run_bo_suite.py plan --group canonical
+python src/run_bo_suite.py plan --group stage0
+python src/run_bo_suite.py plan --group matched_rho
+python src/run_bo_suite.py plan --group dimension
+python src/run_bo_suite.py plan --group architecture
+python src/run_bo_suite.py train-matrix --group canonical --device cuda:0 --dry-run
+```
+
+See `SERVER.md` for the current-CUDA environment and batch commands on a compute server. The
 measurement definitions and staged scientific protocol are in `EXPERIMENTS.md`.
 
 # Maintainers

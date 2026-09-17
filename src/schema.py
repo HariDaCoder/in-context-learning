@@ -53,7 +53,13 @@ training_schema = {
     "data_kwargs": merge(tdict, default({})),
     "seed": merge(tinteger, default(0)),
     "device": merge(tstring, default("auto")),
+    "data_device": merge(tstring, allowed(["cpu", "model"]), default("cpu")),
+    "precision": merge(
+        tstring, allowed(["float32", "float16", "bfloat16"]), default("float32")
+    ),
     "query_mode": merge(tstring, allowed(["causal", "independent"]), default("causal")),
+    "max_context": merge(tinteger, nullable, default(None)),
+    "experiment_id": merge(tstring, nullable, default(None)),
     "eval_after_train": merge(tboolean, default(True)),
     "batch_size": merge(tinteger, default(64)),
     "learning_rate": merge(tfloat, default(3e-4)),
@@ -67,7 +73,10 @@ training_schema = {
 wandb_schema = {
     "mode": merge(tstring, allowed(["online", "offline", "disabled"]), default("online")),
     "project": merge(tstring, default("in-context-training")),
-    "entity": merge(tstring, default("in-context")),
+    "entity": merge(
+        tstring,
+        default("hai-trinh220970-ho-chi-minh-city-university-of-technology"),
+    ),
     "notes": merge(tstring, default("")),
     "name": merge(tstring, nullable, default(None)),
     "log_every_steps": merge(tinteger, default(10)),

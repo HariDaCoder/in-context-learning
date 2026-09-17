@@ -1,12 +1,12 @@
 inherit:
   - bo_iid.yaml
 
-# Reverse-order companion: 20 correlated then 19 IID transitions.
+# Reverse-order companion: 40 correlated then 39 IID transitions.
 training:
   data_kwargs:
     rho: 0.9
     rho_after: 0.0
-    change_point: 21
+    change_point: 41
 
 out_dir: ../models/bo_change_point_reverse
 

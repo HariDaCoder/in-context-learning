@@ -12,13 +12,16 @@ training:
   data_kwargs:
     rho: 0.0
   query_mode: independent
+  max_context: 80
+  data_device: model
+  precision: float32
   seed: 0
   device: auto
   eval_after_train: false  # use bo_experiment.py for clean-query BO metrics
   curriculum:
     points:
       start: 11
-      end: 41
+      end: 81
       inc: 2
       interval: 2000
 
@@ -26,4 +29,3 @@ out_dir: ../models/bo_iid
 
 wandb:
   name: bo_iid_snr2_seed0
-

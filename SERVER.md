@@ -1,62 +1,123 @@
 # Running the experiment suite on a server
 
-The code does not depend on a notebook or a fixed checkout directory. Create
-the repository's pinned environment, activate it, and run commands from the
-repository root:
+The launchers resolve paths from the repository root and contain no host or
+accelerator assignment policy. Use the existing environment when it already
+contains the project dependencies. For a new current-CUDA environment:
 
 ```bash
-conda env create -f environment.yml
-conda activate in-context-learning
+conda env create -f environment-gpu.yml
+conda activate in-context-learning-gpu
+python -c "import torch; print(torch.__version__, torch.cuda.get_device_name(0))"
+```
+
+Authenticate W&B interactively so the API key is stored by W&B rather than in
+the repository or shell history:
+
+```bash
+wandb login
+wandb status
+```
+
+The public entity is configured in `src/conf/wandb.yaml` and the schema
+default. No API key belongs in YAML, source code, manifests, or job scripts.
+
+Validate a checkout before starting long work:
+
+```bash
 python -m unittest discover -s tests -p "test_*.py" -v
-python src/run_bo_suite.py smoke
-```
-
-The training launcher invokes the active interpreter and resolves paths from
-the repository location, regardless of the shell's current directory. Inspect
-the batch first, then start it:
-
-```bash
+python src/run_bo_suite.py smoke --output-root results/smoke
 python src/run_bo_suite.py train --preset all --dry-run
-python -u src/run_bo_suite.py train --preset all
+python src/run_bo_suite.py plan --group stage0 --device cuda:0
+python src/run_bo_suite.py train-matrix --group stage0 \
+  --device cuda:0 --max-concurrent 1 --resume --dry-run
 ```
 
-The `all` training preset contains IID, stationary feature dependence,
-stationary noise dependence, both types of dependence, and the two change-point
-orders. Smaller batches are available as `--preset stationary` and
-`--preset change-point`. Add derived architecture/seed YAML files with repeated
-`--config path/to/config.yaml` arguments. Use `--preset none` when a batch
-should contain only those explicitly supplied files.
+The lock exclusivity test is intentionally skipped. CUDA generator statistics
+are skipped when the test process has no CUDA device. All other tests must
+pass.
 
-Each training config creates a UUID directory under its configured `out_dir`.
-At successful completion, the launcher records every new or updated checkpoint
-directory in `results/bo_suite/trained_checkpoints.json`.
+## Matrix lifecycle
 
-Use the chosen checkpoint directories for the coarse evaluation batch:
+Every group uses the same four-step lifecycle:
 
 ```bash
-python -u src/run_bo_suite.py evaluate \
-  --preset all \
-  --device cuda \
-  --checkpoint-manifest results/bo_suite/trained_checkpoints.json
+python src/run_bo_suite.py plan --group GROUP --device cuda:0
+python src/run_bo_suite.py train-matrix --group GROUP \
+  --device cuda:0 --max-concurrent N --resume --dry-run
+python -u src/run_bo_suite.py train-matrix --group GROUP \
+  --device cuda:0 --max-concurrent N --resume
+python -u src/run_bo_suite.py evaluate-matrix --group GROUP \
+  --protocol matched --device cuda:0 --max-concurrent N
 ```
 
-Use repeated `--run-dir` arguments when you want a selected set of checkpoints,
-or repeated `--checkpoint-manifest` arguments to combine training batches. With
-neither option, evaluation runs only OLS, ridge, and/or oracle GLS as listed by
-each sweep YAML. Output JSON and figures are written below `results/bo_suite`.
-Use `--output-root /mounted/path/results` when results must survive cleanup of
-the checkout.
+`--resume` is the default and is shown explicitly in unattended commands.
+Completed experiment IDs are skipped. Interrupted runs retain `state.pt` and
+resume from it. Each successful run also writes `final.pt` and
+`completed.json`.
 
-For an unattended Linux session, redirect the same launcher through the
-server's usual job mechanism. A plain shell example is:
+Before choosing `N`, benchmark isolated short runs without changing the
+scientific batch size:
 
 ```bash
-mkdir -p results/logs
-nohup python -u src/run_bo_suite.py train --preset all \
-  > results/logs/train-all.log 2>&1 &
+python -u src/run_bo_suite.py benchmark --group stage0 --device cuda:0 \
+  --max-concurrent 1 2 4 --steps 2000
 ```
 
-For Slurm or another scheduler, place the launcher command in the scheduler
-script after activating the environment. GPU allocation and wall-time remain
-scheduler settings; the experiment code itself requires no scheduler-specific
-paths.
+The benchmark summary reports wall time, aggregate steps per second, and
+per-process peak CUDA allocation. Use the fastest stable concurrency for later
+groups. A successful benchmark also writes a group recommendation; subsequent
+`plan` and `train-matrix` calls use it when `--max-concurrent` is omitted.
+
+## Unattended processes
+
+Create a log directory and redirect one launcher process. The launcher creates
+and supervises at most `N` independent training processes:
+
+```bash
+mkdir -p results/launcher_logs
+nohup python -u src/run_bo_suite.py train-matrix --group stage0 \
+  --device cuda:0 --max-concurrent 1 --resume \
+  > results/launcher_logs/stage0.log 2>&1 &
+echo $! > results/launcher_logs/stage0.pid
+tail -f results/launcher_logs/stage0.log
+```
+
+Rerunning the same command is the resume procedure. Do not start two different
+launcher commands that intentionally target the same experiment IDs.
+
+## Evaluation and boundary refinement
+
+Matched and shift are separate dependence protocols. A test-SNR sweep does not
+turn a dependence-matched row into a shift row.
+
+```bash
+python -u src/run_bo_suite.py evaluate-matrix --group canonical \
+  --protocol matched --device cuda:0 --max-concurrent 2
+python -u src/run_bo_suite.py evaluate-matrix --group canonical \
+  --protocol shift --device cuda:0 --max-concurrent 2
+```
+
+Each plot bundle writes `boundary_suggestions.json`. Repeat
+`--boundary-suggestions` to take the union across selected coarse bundles:
+
+```bash
+python -u src/run_bo_suite.py evaluate-matrix --group architecture \
+  --protocol matched --device cuda:0 --max-concurrent 2 \
+  --boundary-suggestions results/bo_matrix/evaluation/plots/BUNDLE_A/boundary_suggestions.json \
+  --boundary-suggestions results/bo_matrix/evaluation/plots/BUNDLE_B/boundary_suggestions.json
+```
+
+## Output layout
+
+- `models/bo_matrix/<experiment_id>/state.pt`: latest resumable checkpoint.
+- `models/bo_matrix/<experiment_id>/final.pt`: final model-only checkpoint.
+- `models/bo_matrix/<experiment_id>/completed.json`: throughput/runtime record.
+- `results/bo_matrix/manifests`: group JSON/CSV manifests.
+- `results/bo_matrix/state`, `locks`, `logs`, `failures`: launcher state.
+- `results/bo_matrix/summaries`: plan and training summaries.
+- `results/bo_matrix/evaluation`: configs, result rows, plots, and manifests.
+- `results/bo_matrix/benchmarks`: isolated concurrency benchmarks.
+- `results/bo_matrix/parameter_match`: exact-count architecture reports.
+
+The `models` and `results` trees are intentionally ignored by Git. Preserve
+them on durable storage or copy them before deleting a checkout.

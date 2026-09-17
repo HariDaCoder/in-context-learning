@@ -1,14 +1,13 @@
 inherit:
   - bo_iid.yaml
 
-# With the final 41-point curriculum there are 40 context observations. The
-# 39 transition coefficients are split as 19 IID then 20 correlated; the
-# reverse config uses exactly the reversed coefficient sequence.
+# With max_context=80 there are 79 transitions: 39 IID then 40 correlated.
+# The reverse config uses exactly the reversed coefficient sequence.
 training:
   data_kwargs:
     rho: 0.0
     rho_after: 0.9
-    change_point: 20
+    change_point: 40
 
 out_dir: ../models/bo_change_point
 
