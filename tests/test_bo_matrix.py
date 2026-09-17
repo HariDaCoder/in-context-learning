@@ -35,6 +35,7 @@ class MatrixExpansionTests(unittest.TestCase):
             {
                 "canonical": 18,
                 "stage0": 9,
+                "matched_snr_pilot": 6,
                 "matched_rho": 35,
                 "dimension": 36,
                 "architecture": 72,

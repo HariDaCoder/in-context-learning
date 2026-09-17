@@ -155,6 +155,44 @@ def _flags(fits, generalizes, identifiable):
     }
 
 
+def _normalized_bo_metrics(
+    duplicate_fit_mse,
+    linear_fit_mse,
+    clean_query_mse,
+    linear_clean_query_mse,
+    heldout_probe_r2,
+    signal_variance,
+    noise_variance,
+    tau_fit,
+    tau_gen,
+    tau_probe_r2,
+):
+    """Return scale-aware BO diagnostics without hiding the raw errors."""
+
+    eps = torch.finfo(signal_variance.dtype).eps
+    noise_scale = noise_variance.clamp_min(eps)
+    signal_scale = signal_variance.clamp_min(eps)
+    duplicate_fit_ratio = duplicate_fit_mse / noise_scale
+    linear_fit_ratio = linear_fit_mse / noise_scale
+    clean_gen_ratio = clean_query_mse / signal_scale
+    linear_clean_gen_ratio = linear_clean_query_mse / signal_scale
+    direct = torch.isfinite(torch.stack((duplicate_fit_ratio, clean_gen_ratio))).all(dim=0)
+    direct = direct & (duplicate_fit_ratio <= tau_fit) & (clean_gen_ratio <= tau_gen)
+    linear = torch.isfinite(torch.stack((linear_fit_ratio, linear_clean_gen_ratio, heldout_probe_r2))).all(dim=0)
+    linear = linear & (heldout_probe_r2 >= tau_probe_r2)
+    linear = linear & (linear_fit_ratio <= tau_fit) & (linear_clean_gen_ratio <= tau_gen)
+    return {
+        "signal_variance": signal_variance,
+        "noise_variance": noise_variance,
+        "duplicate_fit_ratio": duplicate_fit_ratio,
+        "linear_fit_ratio": linear_fit_ratio,
+        "clean_gen_ratio": clean_gen_ratio,
+        "linear_clean_gen_ratio": linear_clean_gen_ratio,
+        "direct_bo_candidate": direct,
+        "linear_bo_candidate": linear,
+    }
+
+
 @torch.no_grad()
 def evaluate_context(
     model,
@@ -170,6 +208,9 @@ def evaluate_context(
     query_batch_size=256,
     noise_covariance=None,
     run_linear_probe=True,
+    tau_fit=0.1,
+    tau_gen=0.1,
+    tau_probe_r2=0.99,
 ):
     """Evaluate one fixed noisy context per task without revealing test labels.
 
@@ -213,13 +254,18 @@ def evaluate_context(
         raise ValueError("query_batch_size must be a positive integer")
     if not isinstance(run_linear_probe, bool):
         raise ValueError("run_linear_probe must be boolean")
-    if not all(math.isfinite(v) and v >= 0 for v in (fit_threshold, gen_threshold)):
+    if not all(math.isfinite(v) and v >= 0 for v in (fit_threshold, gen_threshold, tau_fit, tau_gen)):
         raise ValueError("fit and generalization thresholds must be finite and nonnegative")
     if not math.isfinite(linearity_threshold) or not 0 <= linearity_threshold <= 1:
         raise ValueError("linearity_threshold must lie in [0,1]")
+    if not math.isfinite(tau_probe_r2) or not 0 <= tau_probe_r2 <= 1:
+        raise ValueError("tau_probe_r2 must lie in [0,1]")
     w_true = w_true.to(device=xs.device, dtype=xs.dtype)
     queries = queries.to(device=xs.device, dtype=xs.dtype)
     clean_targets = (queries @ w_true.unsqueeze(-1)).squeeze(-1)
+    context_clean_targets = (xs @ w_true.unsqueeze(-1)).squeeze(-1)
+    signal_variance = clean_targets.square().mean(dim=1)
+    noise_variance = (ys_noisy - context_clean_targets).square().mean(dim=1)
 
     if isinstance(model, LinearEstimator):
         model.fit(xs, ys_noisy, noise_covariance=noise_covariance)
@@ -227,12 +273,25 @@ def evaluate_context(
         clean_mse = _mean_squared(model.predict(queries), clean_targets)
         parameter_error = (model.weights_ - w_true).square().sum(dim=1)
         finite = torch.isfinite(fit_mse) & torch.isfinite(parameter_error) & torch.isfinite(clean_mse)
+        normalized = _normalized_bo_metrics(
+            fit_mse, fit_mse, clean_mse, clean_mse, torch.ones_like(fit_mse),
+            signal_variance, noise_variance, tau_fit, tau_gen, tau_probe_r2,
+        )
         return {
             "context_fit_mse": fit_mse,
+            "duplicate_fit_mse": fit_mse,
+            "linear_fit_mse": fit_mse,
             "clean_query_mse": clean_mse,
+            "linear_clean_query_mse": clean_mse,
+            "heldout_probe_r2": torch.ones_like(fit_mse),
             "parameter_error": parameter_error,
+            "implied_parameter_error": parameter_error,
             "exact_isotropic_clean_risk": parameter_error,
-            "linear_bo_candidate": finite & (fit_mse <= fit_threshold) & (parameter_error <= gen_threshold),
+            "supports_interpolation": torch.full_like(fit_mse, model.kind != "ridge", dtype=torch.bool),
+            **normalized,
+            # Kept for callers built against the first result schema.
+            "bo_candidate": normalized["direct_bo_candidate"],
+            "legacy_linear_bo_candidate": finite & (fit_mse <= fit_threshold) & (parameter_error <= gen_threshold),
             **_flags(fit_mse <= fit_threshold, parameter_error <= gen_threshold, finite),
         }
 
@@ -274,10 +333,16 @@ def evaluate_context(
     direct_result = {
         "clean_query_mse": direct_clean,
         "duplicate_context_fit_mse": duplicate_fit,
+        "duplicate_fit_mse": duplicate_fit,
         **direct_flags,
     }
     if not run_linear_probe:
-        return direct_result
+        unavailable = torch.full_like(duplicate_fit, float("nan"))
+        normalized = _normalized_bo_metrics(
+            duplicate_fit, unavailable, direct_clean, unavailable, unavailable,
+            signal_variance, noise_variance, tau_fit, tau_gen, tau_probe_r2,
+        )
+        return {**direct_result, **normalized}
 
     implied_weights = (torch.linalg.pinv(probe_queries) @ probe_predictions.unsqueeze(-1)).squeeze(-1)
     probe_fit = _mean_squared((xs @ implied_weights.unsqueeze(-1)).squeeze(-1), ys_noisy)
@@ -294,9 +359,16 @@ def evaluate_context(
         (direct_clean <= gen_threshold) & (probe_clean <= gen_threshold),
         linearity_pass,
     )
+    normalized = _normalized_bo_metrics(
+        duplicate_fit, probe_fit, direct_clean, probe_clean, probe_r2,
+        signal_variance, noise_variance, tau_fit, tau_gen, tau_probe_r2,
+    )
     return {
         "context_fit_mse": probe_fit,
         **direct_result,
+        "linear_fit_mse": probe_fit,
+        "linear_clean_query_mse": probe_clean,
+        "heldout_probe_r2": probe_r2,
         "probe_fit_mse": probe_fit,
         "probe_clean_mse": probe_clean,
         "probe_r2": probe_r2,
@@ -304,7 +376,8 @@ def evaluate_context(
         "probe_isotropic_clean_risk": parameter_error,
         "probe_identifiable": identifiable,
         "linearity_pass": linearity_pass,
-        "linear_bo_candidate": linear_flags["bo_candidate"],
+        "supports_interpolation": torch.ones_like(duplicate_fit, dtype=torch.bool),
+        **normalized,
         "linear_harmful_overfitting": linear_flags["harmful_overfitting"],
         "linear_underfitting": linear_flags["underfitting"],
         "linear_indeterminate": linear_flags["indeterminate"],

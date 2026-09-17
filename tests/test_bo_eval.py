@@ -184,7 +184,8 @@ class BOEvaluationTests(unittest.TestCase):
         )
         self.assertTrue(result["bo_candidate"].item())
         self.assertNotIn("probe_r2", result)
-        self.assertNotIn("linear_bo_candidate", result)
+        self.assertFalse(result["linear_bo_candidate"].item())
+        self.assertTrue(result["direct_bo_candidate"].item())
 
     def test_retrieval_and_generalization_are_separate_from_linear_interpolation(self):
         xs = torch.tensor([[[1.], [2.]]], dtype=self.dtype)

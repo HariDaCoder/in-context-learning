@@ -53,7 +53,10 @@ EVALUATION_PRESETS = {
 # Scientific group names are deliberately independent of the machine that runs
 # them.  Resource assignment belongs in the launch instructions, not in stable
 # experiment IDs or persisted manifests.
-MATRIX_GROUPS = ("architecture", "canonical", "dimension", "matched_rho", "stage0")
+MATRIX_GROUPS = (
+    "architecture", "canonical", "dimension", "matched_rho",
+    "matched_snr_pilot", "stage0",
+)
 
 
 def _preset_items(presets, name):
@@ -277,6 +280,9 @@ def run_matrix_plan(args):
 
 def run_matrix_training(args):
     from bo_matrix_train import train_group, train_manifest
+    if args.matrix_manifest is None and args.group in {"matched_rho", "dimension", "architecture"} and not args.dry_run:
+        from bo_scientific_audit import require_main_gate
+        require_main_gate(REPOSITORY_ROOT)
 
     trainer = train_manifest if args.matrix_manifest is not None else train_group
     source = args.matrix_manifest if args.matrix_manifest is not None else args.group
@@ -294,6 +300,22 @@ def run_matrix_training(args):
             "Matrix training contains failed, blocked, or locked experiments; "
             "inspect {}".format(_display_path(summary.summary_path))
         )
+
+
+def run_scientific_audit(args):
+    from bo_scientific_audit import audit
+
+    report, json_path, csv_path, markdown_path = audit(args.input, args.output_dir)
+    _print_json({
+        "recommendation": report["recommendation"],
+        "transformer_rows": report["transformer_rows"],
+        "fully_matched_rows": report["fully_matched_rows"],
+        "direct_bo_rows": report["direct_bo_rows"],
+        "linear_bo_rows": report["linear_bo_rows"],
+        "json": _display_path(json_path),
+        "csv": _display_path(csv_path),
+        "markdown": _display_path(markdown_path),
+    })
 
 
 def run_matrix_evaluation(args):
@@ -324,6 +346,10 @@ def run_matrix_evaluation(args):
             command.extend((flag, str(value)))
     for path in args.boundary_suggestions:
         command.extend(("--boundary-suggestions", str(path)))
+    if args.match_train_snr:
+        command.append("--match-train-snr")
+    if args.linear_probe:
+        command.append("--linear-probe")
     if args.no_baselines:
         command.append("--no-baselines")
     if args.no_plot:
@@ -549,6 +575,8 @@ def build_parser():
         "--protocol", choices=("matched", "shift", "all"), default="matched"
     )
     matrix_evaluate.add_argument("--snr", action="append", type=float, default=[])
+    matrix_evaluate.add_argument("--match-train-snr", action="store_true")
+    matrix_evaluate.add_argument("--linear-probe", action="store_true")
     matrix_evaluate.add_argument("--eval-seed", action="append", type=int, default=[])
     matrix_evaluate.add_argument("--k-over-d", action="append", type=float, default=[])
     matrix_evaluate.add_argument("--shift-rho", action="append", type=float, default=[])
@@ -570,6 +598,16 @@ def build_parser():
     matrix_evaluate.add_argument("--force", action="store_true")
     matrix_evaluate.add_argument("--dry-run", action="store_true")
     matrix_evaluate.set_defaults(function=run_matrix_evaluation)
+
+    scientific_audit = commands.add_parser(
+        "scientific-audit", help="Write the audit that gates the main BO matrix"
+    )
+    scientific_audit.add_argument("--input", action="append", type=Path, required=True)
+    scientific_audit.add_argument(
+        "--output-dir", type=Path,
+        default=REPOSITORY_ROOT / "results" / "bo_matrix" / "scientific_audit",
+    )
+    scientific_audit.set_defaults(function=run_scientific_audit)
 
     benchmark = commands.add_parser(
         "benchmark", help="Benchmark independent experiment concurrency with short runs"

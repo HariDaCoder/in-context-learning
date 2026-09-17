@@ -34,7 +34,8 @@ DEFAULTS = {
     "eval_seeds": [1001, 1002, 1003], "n_eval": 32, "batch_size": 16,
     "n_queries": 64, "n_probe_queries": None, "n_probe_test_queries": 64,
     "query_batch_size": 256, "fit_threshold": 1e-4, "gen_threshold": 0.1,
-    "linearity_threshold": 0.99, "feature_rho_after": None,
+    "linearity_threshold": 0.99, "tau_fit": 0.1, "tau_gen": 0.1,
+    "tau_probe_r2": 0.99, "feature_rho_after": None,
     "feature_change_point": None, "noise_rho": 0.0, "noise_rho_after": None,
     "noise_change_point": None, "baselines": ["ols", "ridge", "gls"],
     "linear_probe": True,
@@ -80,11 +81,13 @@ def load_config(path):
         raise ValueError("snrs must be positive (use 'inf' for noiseless)")
     if len(set(config["snrs"])) != len(config["snrs"]):
         raise ValueError("snrs contains duplicate numeric values")
-    for name in ("fit_threshold", "gen_threshold"):
+    for name in ("fit_threshold", "gen_threshold", "tau_fit", "tau_gen"):
         if not math.isfinite(config[name]) or config[name] < 0:
             raise ValueError(f"{name} must be finite and nonnegative")
     if not 0 <= config["linearity_threshold"] <= 1:
         raise ValueError("linearity_threshold must lie in [0, 1]")
+    if not 0 <= config["tau_probe_r2"] <= 1:
+        raise ValueError("tau_probe_r2 must lie in [0, 1]")
     # Validate exact transition conventions for every requested context length.
     for k, rho in itertools.product(config["context_lengths"], config["rhos"]):
         temporal_correlation(k, rho=rho, rho_after=config["feature_rho_after"],
@@ -140,7 +143,7 @@ def _same_value(left, right):
         return left == right
 
 
-def _distribution_metadata(metadata, config, rho, snr):
+def _distribution_metadata(metadata, config, rho, snr, context_length=None):
     """Build auditable train/test distribution metadata for one result row.
 
     Classical estimators are fitted on the condition itself, so their local
@@ -163,6 +166,8 @@ def _distribution_metadata(metadata, config, rho, snr):
         }
         train_snr = snr
         source = "condition_local_estimator"
+        train_min_context = context_length
+        train_max_context = context_length
     else:
         training = metadata.get("training_config", {})
         data_kwargs = training.get("data_kwargs", {}) or {}
@@ -179,6 +184,12 @@ def _distribution_metadata(metadata, config, rho, snr):
         }
         train_snr = task_kwargs.get("snr")
         source = "checkpoint_config"
+        curriculum = training.get("curriculum", {}) or {}
+        points = curriculum.get("points", {}) or {}
+        train_min_context = points.get("start")
+        train_max_context = training.get("max_context")
+        if train_max_context is None and points.get("end") is not None:
+            train_max_context = int(points["end"]) - 1
 
     test_feature = {
         "rho": rho,
@@ -198,6 +209,17 @@ def _distribution_metadata(metadata, config, rho, snr):
         for train_side, test_side in ((train_feature, test_feature), (train_noise, test_noise))
         for key in ("rho", "rho_after", "change_point")
     )
+    dependence_protocol = "matched" if matched else "shift"
+    snr_protocol = "mixture_train" if train_snr is None else (
+        "matched" if _same_value(train_snr, snr) else "shift"
+    )
+    in_train_context_support = (
+        context_length is not None
+        and train_min_context is not None
+        and train_max_context is not None
+        and int(train_min_context) <= int(context_length) <= int(train_max_context)
+    )
+    context_protocol = "matched" if in_train_context_support else "length_shift"
     signature = {
         "feature": train_feature,
         "noise": train_noise,
@@ -214,8 +236,15 @@ def _distribution_metadata(metadata, config, rho, snr):
         "test_rho_e": config["noise_rho"],
         "train_snr": train_snr,
         "test_snr": snr,
-        "protocol": "matched" if matched else "shift",
-        "evaluation_protocol": "matched" if matched else "shift",
+        "protocol": dependence_protocol,
+        "evaluation_protocol": dependence_protocol,
+        "dependence_protocol": dependence_protocol,
+        "snr_protocol": snr_protocol,
+        "context_protocol": context_protocol,
+        "in_train_context_support": in_train_context_support,
+        "train_min_context": train_min_context,
+        "train_max_context": train_max_context,
+        "fully_matched": dependence_protocol == "matched" and snr_protocol == "matched" and context_protocol == "matched",
         "train_distribution_id": distribution_id,
         "train_distribution": signature,
         "test_distribution": {
@@ -348,12 +377,14 @@ def run_sweep(config, run_dirs=(), device="cpu"):
                         fit_threshold=config["fit_threshold"],
                         gen_threshold=config["gen_threshold"],
                         linearity_threshold=config["linearity_threshold"],
+                        tau_fit=config["tau_fit"], tau_gen=config["tau_gen"],
+                        tau_probe_r2=config["tau_probe_r2"],
                         query_batch_size=config["query_batch_size"],
                         noise_covariance=covariance,
                         run_linear_probe=config["linear_probe"],
                     ))
         for (_, metadata), batches in zip(models, measurements):
-            distribution = _distribution_metadata(metadata, config, rho, snr)
+            distribution = _distribution_metadata(metadata, config, rho, snr, k)
             records.append({
                 "protocol_id": protocol_id, "model": metadata["model"],
                 "checkpoint_id": metadata["checkpoint_id"], "training_seed": metadata["training_seed"],

@@ -425,6 +425,21 @@ GROUPS = {
         },
         axes={"train_rho_x": (0.0, 0.6, 0.9), "train_seed": (0, 1, 2)},
     ),
+    "matched_snr_pilot": MatrixGroup(
+        name="matched_snr_pilot",
+        description="Six-model pilot with train SNR matched to each test SNR",
+        base={
+            "regime": "stationary_feature_ar1",
+            "d": 20,
+            "train_rho_e": 0.0,
+            "max_context": 80,
+        },
+        axes={
+            "train_rho_x": (0.0, 0.9),
+            "train_snr": (0.8, 1.6, 3.2),
+            "train_seed": (0,),
+        },
+    ),
     "matched_rho": MatrixGroup(
         name="matched_rho",
         description="Main stationary training matrix for matched-rho evaluation",

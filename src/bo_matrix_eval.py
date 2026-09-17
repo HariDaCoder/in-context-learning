@@ -145,6 +145,8 @@ def evaluation_config(
     n_eval: int = 32,
     batch_size: int = 16,
     baselines: Sequence[Any] = (),
+    match_train_snr: bool = False,
+    linear_probe: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Return one bo_experiment config for a dependence-matched/shifted job.
 
@@ -158,7 +160,7 @@ def evaluation_config(
         raise ValueError("n_eval must be a positive integer")
     if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
         raise ValueError("batch_size must be a positive integer")
-    snrs = _positive_floats(test_snrs, "test_snrs")
+    snrs = (float(spec.train_snr),) if match_train_snr else _positive_floats(test_snrs, "test_snrs")
     seeds = _nonnegative_ints(eval_seeds, "eval_seeds")
     contexts = context_lengths_for_spec(spec, k_over_d)
     shift_rhos = tuple(dict.fromkeys(float(value) for value in shift_test_rhos))
@@ -196,7 +198,7 @@ def evaluation_config(
         "n_queries": 32,
         "n_probe_queries": None,
         "n_probe_test_queries": 64,
-        "linear_probe": False,
+        "linear_probe": linear_probe,
         "query_batch_size": 256,
         "fit_threshold": 0.0001,
         "gen_threshold": 0.1,
@@ -300,6 +302,8 @@ def build_evaluation_jobs(
     batch_size: int = 16,
     include_baselines: bool = True,
     output_root: Path = DEFAULT_OUTPUT_ROOT,
+    match_train_snr: bool = False,
+    linear_probe: bool = False,
 ) -> Tuple[EvaluationJob, ...]:
     """Build semantically deduplicated checkpoint and baseline jobs."""
     protocol_values = tuple(dict.fromkeys(protocols))
@@ -321,7 +325,8 @@ def build_evaluation_jobs(
         for protocol in protocol_values:
             config = evaluation_config(
                 spec, protocol, test_snrs, eval_seeds, k_over_d,
-                shift_test_rhos, n_eval, batch_size, baselines=(),
+                shift_test_rhos, n_eval, batch_size, baselines=(), match_train_snr=match_train_snr,
+                linear_probe=linear_probe,
             )
             if config is None:
                 continue
@@ -566,6 +571,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--protocol", choices=("matched", "shift", "all"), default="matched")
     parser.add_argument("--snr", action="append", type=float,
                         help="Override dense test SNRs; repeatable")
+    parser.add_argument("--match-train-snr", action="store_true",
+                        help="Evaluate each checkpoint only at its own training SNR")
+    parser.add_argument("--linear-probe", action="store_true",
+                        help="Run held-out linear-surrogate probes for linear BO diagnostics")
     parser.add_argument(
         "--boundary-suggestions", action="append", type=Path, default=[],
         help="Use suggested follow-up SNRs from bo_plot.py; repeatable",
@@ -593,6 +602,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     if args.snr and args.boundary_suggestions:
         raise ValueError("use either --snr or --boundary-suggestions, not both")
+    if args.match_train_snr and (args.snr or args.boundary_suggestions):
+        raise ValueError("--match-train-snr cannot be combined with --snr or --boundary-suggestions")
     group_names = args.group or (["canonical"] if not args.matrix_manifest else [])
     specs = []
     for group in group_names:
@@ -627,6 +638,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         shift_test_rhos=args.shift_rho or DENSE_TEST_RHOS,
         n_eval=args.n_eval, batch_size=args.batch_size,
         include_baselines=not args.no_baselines, output_root=args.output_root,
+        match_train_snr=args.match_train_snr,
+        linear_probe=args.linear_probe,
     )
     statuses = run_jobs(
         jobs, REPOSITORY_ROOT, args.device, args.dry_run, args.force, args.max_workers
