@@ -8,6 +8,7 @@ from pathlib import Path
 
 DEFAULT_OUTPUT_DIR = Path("results/bo_matrix/scientific_audit")
 MAIN_GROUPS = frozenset(("matched_rho", "dimension", "architecture"))
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _metric(record, name):
@@ -31,11 +32,19 @@ def audit(inputs, output_dir=DEFAULT_OUTPUT_DIR):
     for input_path in inputs:
         path = Path(input_path)
         document = json.loads(path.read_text(encoding="utf-8"))
-        for record in document.get("records", []):
-            if not isinstance(record, dict) or record.get("checkpoint_id") is None:
-                continue
-            rows.append({
-                "source": str(path),
+        documents = [(path, document)]
+        for job in document.get("jobs", []):
+            result_path = job.get("result_path") if isinstance(job, dict) else None
+            if result_path and job.get("kind") == "checkpoint":
+                candidate = REPOSITORY_ROOT / result_path
+                if candidate.is_file():
+                    documents.append((candidate, json.loads(candidate.read_text(encoding="utf-8"))))
+        for source, result in documents:
+            for record in result.get("records", []):
+                if not isinstance(record, dict) or record.get("checkpoint_id") is None:
+                    continue
+                rows.append({
+                "source": str(source),
                 "checkpoint_id": record.get("checkpoint_id"),
                 "train_regime": record.get("train_distribution", {}).get("source", "unknown"),
                 "dependence_protocol": record.get("dependence_protocol", record.get("protocol")),
@@ -48,8 +57,8 @@ def audit(inputs, output_dir=DEFAULT_OUTPUT_DIR):
                 "linear_clean_gen_ratio": _metric(record, "linear_clean_gen_ratio"),
                 "heldout_probe_r2": _metric(record, "heldout_probe_r2"),
                 "duplicate_fit_ratio": _metric(record, "duplicate_fit_ratio"),
-                "linear_fit_ratio": _metric(record, "linear_fit_ratio"),
-            })
+                    "linear_fit_ratio": _metric(record, "linear_fit_ratio"),
+                })
     fully_matched = [row for row in rows if row["fully_matched"]]
     direct_region = [row for row in fully_matched if _finite_positive(row["direct_bo_frequency"])]
     linear_region = [row for row in fully_matched if _finite_positive(row["linear_bo_frequency"])]
