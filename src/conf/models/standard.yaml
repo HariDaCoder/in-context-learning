@@ -1,4 +1,5 @@
 model:
+    # joint_scale: this is not an isolated head/layer effect.
     family: gpt2
     n_embd: 256
     n_layer: 12

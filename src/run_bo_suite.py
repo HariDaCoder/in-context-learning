@@ -57,6 +57,13 @@ MATRIX_GROUPS = (
     "architecture", "canonical", "dimension", "matched_rho",
     "matched_snr_pilot", "stage0",
 )
+from arch_dynamics_plan import GROUPS as ARCHITECTURE_DYNAMICS_GROUPS
+MATRIX_GROUPS += ARCHITECTURE_DYNAMICS_GROUPS
+
+
+def run_architecture_analysis(args):
+    from arch_dynamics_runner import dispatch
+    return dispatch(args, 'analyze')
 
 
 def _preset_items(presets, name):
@@ -264,6 +271,9 @@ def _training_concurrency(args):
 
 
 def run_matrix_plan(args):
+    if args.group in ARCHITECTURE_DYNAMICS_GROUPS:
+        from arch_dynamics_runner import dispatch
+        return dispatch(args, 'plan')
     from bo_matrix_train import plan_group, plan_manifest
 
     planner = plan_manifest if args.matrix_manifest is not None else plan_group
@@ -279,6 +289,9 @@ def run_matrix_plan(args):
 
 
 def run_matrix_training(args):
+    if args.group in ARCHITECTURE_DYNAMICS_GROUPS:
+        from arch_dynamics_runner import dispatch
+        return dispatch(args, 'train')
     from bo_matrix_train import train_group, train_manifest
     if args.matrix_manifest is None and args.group in {"matched_rho", "dimension", "architecture"} and not args.dry_run:
         from bo_scientific_audit import require_main_gate
@@ -319,6 +332,9 @@ def run_scientific_audit(args):
 
 
 def run_matrix_evaluation(args):
+    if any(group in ARCHITECTURE_DYNAMICS_GROUPS for group in args.group):
+        from arch_dynamics_runner import dispatch
+        return dispatch(args, 'evaluate')
     from bo_matrix_eval import main as matrix_evaluation_main
 
     command = []
@@ -682,6 +698,13 @@ def build_parser():
     scaling.add_argument("--figures-dir", type=Path, default=None)
     scaling.add_argument("--target-probability", type=float, default=0.5)
     scaling.set_defaults(function=run_scaling_analysis)
+    from arch_dynamics_runner import add_arguments
+    for command in (plan, matrix_train, matrix_evaluate):
+        add_arguments(command)
+    architecture_analysis = commands.add_parser('analyze-architecture', help='Plot online architecture dynamics and empirical events')
+    architecture_analysis.add_argument('--group', choices=ARCHITECTURE_DYNAMICS_GROUPS, required=True)
+    add_arguments(architecture_analysis)
+    architecture_analysis.set_defaults(function=run_architecture_analysis)
     return parser
 
 
