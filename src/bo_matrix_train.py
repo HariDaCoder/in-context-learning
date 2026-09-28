@@ -144,6 +144,16 @@ def _write_runtime_config(
     destination = Path(repository_root) / relative_path
     config = spec.to_training_config()
     config["training"]["device"] = device
+    wandb_mode = os.environ.get("BO_WANDB_MODE")
+    if wandb_mode is not None:
+        valid_wandb_modes = {"online", "offline", "disabled"}
+        if wandb_mode not in valid_wandb_modes:
+            raise ValueError(
+                "BO_WANDB_MODE must be one of {}".format(
+                    ", ".join(sorted(valid_wandb_modes))
+                )
+            )
+        config["wandb"]["mode"] = wandb_mode
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name("{}.{}.tmp".format(destination.name, uuid.uuid4().hex))
     try:
