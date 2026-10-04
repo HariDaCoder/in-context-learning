@@ -70,29 +70,32 @@ not fit or enforce the law.
 ## Staged experiment order
 
 1. Run `smoke` to validate OLS/ridge/oracle-GLS and plotting cheaply.
-2. Train and evaluate `stage0`: 9 standard models from three feature
+2. Run `matched_snr_pilot`: six seed-0 standard models at matched feature
+   dependence/SNR settings. Its train SNRs are 0.8, 1.6, and 2.0 only; this
+   low-to-moderate scan excludes the high-SNR regime.
+3. Train and evaluate `stage0`: 9 standard models from three feature
    correlations and three training seeds. Keep `train_rho_x == test_rho_x`.
-3. Inspect fitting/generalization and BO-frequency output before starting the
+4. Inspect fitting/generalization and BO-frequency output before starting the
    larger groups.
-4. Train `canonical`: 18 standard models from six regimes and three seeds.
+5. Train `canonical`: 18 standard models from six regimes and three seeds.
    Evaluate both dependence-matched and dependence-shift protocols. The two
    change-point schedules have 79 exactly reversed transition coefficients and
    equal correlation-matrix effective rank.
-5. Train `matched_rho`: 35 standard models from seven feature correlations and
+6. Train `matched_rho`: 35 standard models from seven feature correlations and
    five seeds. This is the main matched-dependence phase experiment.
-6. Train `dimension`: 36 standard models from four dimensions, three feature
+7. Train `dimension`: 36 standard models from four dimensions, three feature
    correlations, and three seeds. Contexts are derived from `k/d`; the largest
    checkpoint supports `d=80, k=320`.
-7. Use the coarse matched results to write `boundary_suggestions.json`. Every
+8. Use the coarse matched results to write `boundary_suggestions.json`. Every
    observed crossing is retained; multiple crossings are never collapsed to a
    single threshold. With no crossing, the closest sampled BO probability
    drives a grid expansion or local refinement.
-8. Train `architecture`: 72 unique checkpoints after semantic shape
+9. Train `architecture`: 72 unique checkpoints after semantic shape
    de-duplication. Evaluate these at the automatically suggested SNR points.
-9. Instantiate the parameter-matched search, then train its 24 manifest rows.
+10. Instantiate the parameter-matched search, then train its 24 manifest rows.
    The standard depth-12 rows reuse existing checkpoints when their semantic
    IDs match.
-10. Run aggregate mechanism hooks only on selected checkpoints and conditions.
+11. Run aggregate mechanism hooks only on selected checkpoints and conditions.
     The output contains moments and small head Gram matrices, never full stored
     attention tensors.
 
@@ -121,6 +124,7 @@ The matrix groups and exact training counts are:
 
 | Group | Experiments | Purpose |
 |---|---:|---|
+| `matched_snr_pilot` | 6 | seed-0 SNR pilot at 0.8, 1.6, and 2.0 |
 | `canonical` | 18 | six canonical regimes, three seeds |
 | `stage0` | 9 | matched-dependence validation |
 | `matched_rho` | 35 | main seven-rho phase experiment |
@@ -141,8 +145,10 @@ skipped, interrupted checkpoints are resumed, and concurrent launchers contend
 on per-experiment locks. Checkpoints are under `models/bo_matrix/<experiment_id>`;
 plans, state, logs, failures, and manifests are under `results/bo_matrix`.
 
-Dense matched evaluation uses eight amplitude-SNR values, eight `k/d` values,
-and ten evaluation seeds by default:
+Dense matched evaluation uses eight amplitude-SNR values
+`[0.1, 0.2, 0.4, 0.6, 0.8, 1.2, 1.6, 2.0]`, eight `k/d` values, and ten
+evaluation seeds by default. The v2 evaluator rejects SNR values above 2.0,
+including values supplied through `--snr` or boundary suggestions:
 
 ```bash
 python src/run_bo_suite.py evaluate-matrix \

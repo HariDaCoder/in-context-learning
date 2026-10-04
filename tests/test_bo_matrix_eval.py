@@ -94,6 +94,14 @@ class MatrixEvaluationPlanningTests(unittest.TestCase):
         )
         self.assertIsNone(config)
 
+    def test_v2_evaluation_rejects_snr_above_two(self):
+        spec = expand_group("stage0")[0]
+        with self.assertRaisesRegex(ValueError, "must not exceed 2.0"):
+            evaluation_config(
+                spec, "matched", test_snrs=(2.1,), eval_seeds=(1001,),
+                k_over_d=(1.0,),
+            )
+
 
 class MatrixEvaluationExecutionTests(unittest.TestCase):
     def setUp(self):

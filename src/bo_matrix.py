@@ -37,6 +37,9 @@ SNR_DEFINITION = (
     "with w ~ N(0, I_d/d) and x ~ N(0, I_d), signal variance is one and "
     "label_noise_std = 1 / amplitude_snr"
 )
+# The v2 matrix intentionally stays below the high-SNR regime.  The cap is
+# enforced for matrix evaluation too, including CLI and boundary follow-ups.
+V2_MAX_AMPLITUDE_SNR = 2.0
 
 
 def _utc_now() -> str:
@@ -427,7 +430,7 @@ GROUPS = {
     ),
     "matched_snr_pilot": MatrixGroup(
         name="matched_snr_pilot",
-        description="Six-model pilot with train SNR matched to each test SNR",
+        description="Six-model pilot spanning low-to-moderate SNR up to 2.0",
         base={
             "regime": "stationary_feature_ar1",
             "d": 20,
@@ -436,7 +439,7 @@ GROUPS = {
         },
         axes={
             "train_rho_x": (0.0, 0.9),
-            "train_snr": (0.8, 1.6, 3.2),
+            "train_snr": (0.8, 1.6, 2.0),
             "train_seed": (0,),
         },
     ),
@@ -490,7 +493,10 @@ GROUPS = {
 
 
 DIMENSION_K_OVER_D = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 4.0)
-DENSE_TEST_SNRS = (0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4, 12.8)
+# Eight samples over the v2 low-to-moderate SNR study range.  Keeping the
+# endpoint at 2.0 prevents evaluations from reintroducing the discarded
+# high-SNR regime through the dense grid.
+DENSE_TEST_SNRS = (0.1, 0.2, 0.4, 0.6, 0.8, 1.2, 1.6, 2.0)
 DENSE_TEST_RHOS = (0.0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95)
 DEFAULT_EVAL_SEEDS = tuple(range(1001, 1011))
 

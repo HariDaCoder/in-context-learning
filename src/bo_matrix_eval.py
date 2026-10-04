@@ -36,6 +36,7 @@ from bo_matrix import (
     DENSE_TEST_RHOS,
     DENSE_TEST_SNRS,
     DIMENSION_K_OVER_D,
+    V2_MAX_AMPLITUDE_SNR,
     GROUPS,
     ExperimentSpec,
     REPOSITORY_ROOT,
@@ -161,6 +162,10 @@ def evaluation_config(
     if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
         raise ValueError("batch_size must be a positive integer")
     snrs = (float(spec.train_snr),) if match_train_snr else _positive_floats(test_snrs, "test_snrs")
+    if any(snr > V2_MAX_AMPLITUDE_SNR for snr in snrs):
+        raise ValueError(
+            "v2 matrix evaluation SNR must not exceed {}".format(V2_MAX_AMPLITUDE_SNR)
+        )
     seeds = _nonnegative_ints(eval_seeds, "eval_seeds")
     contexts = context_lengths_for_spec(spec, k_over_d)
     shift_rhos = tuple(dict.fromkeys(float(value) for value in shift_test_rhos))

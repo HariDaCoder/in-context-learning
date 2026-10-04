@@ -151,13 +151,17 @@ class ManifestAndStateTests(unittest.TestCase):
         self.assertIsInstance(json.loads(rows[0]["architecture_memberships"]), list)
         self.assertEqual(
             document["evaluation_axes"]["test_snrs"],
-            [0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4, 12.8],
+            [0.1, 0.2, 0.4, 0.6, 0.8, 1.2, 1.6, 2.0],
         )
         loaded = load_experiment_manifest(json_path)
         self.assertEqual(
             [spec.experiment_id for spec in loaded],
             [spec.experiment_id for spec in specs],
         )
+
+    def test_matched_snr_pilot_stays_in_v2_snr_range(self):
+        pilot_snrs = sorted({spec.train_snr for spec in expand_group("matched_snr_pilot")})
+        self.assertEqual(pilot_snrs, [0.8, 1.6, 2.0])
 
     def test_manifest_semantic_tampering_is_rejected(self):
         json_path, _ = write_manifest("stage0", (self.spec,), self.root)
