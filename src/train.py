@@ -4,6 +4,13 @@ import random
 import time
 import uuid
 
+# New W&B clients accept the current ``wandb_v1_`` tokens but require a
+# modern protobuf runtime.  Some CUDA images still bundle an older ONNX
+# package, which PyTorch imports while constructing its optimizer.  The
+# Python protobuf implementation keeps that import compatible; it affects
+# ONNX protobuf parsing only and is not on the training-step hot path.
+os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
+
 from quinine import QuinineArgumentParser
 from tqdm import tqdm
 import torch
