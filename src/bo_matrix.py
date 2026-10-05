@@ -783,6 +783,18 @@ class ExperimentLock:
             return False
         try:
             os.kill(pid, 0)
+            # A terminated child can remain a zombie until its parent reaps
+            # it.  ``kill(pid, 0)`` still succeeds for that state, but the
+            # process can no longer own this lock.  Linux exposes the state
+            # in /proc; retain the conservative behavior on other systems.
+            if os.name == "posix":
+                try:
+                    fields = Path("/proc") / str(pid) / "stat"
+                    if fields.read_text(encoding="utf-8").split()[2] == "Z":
+                        self.path.unlink()
+                        return True
+                except (FileNotFoundError, IndexError, OSError):
+                    pass
             return False
         except PermissionError:
             return False
