@@ -79,7 +79,10 @@ wandb_schema = {
     ),
     "notes": merge(tstring, default("")),
     "name": merge(tstring, nullable, default(None)),
-    "log_every_steps": merge(tinteger, default(10)),
+    # Standalone matrix configs do not inherit conf/wandb.yaml.  Keep their
+    # default aligned with that file so long background runs do not spend a
+    # CPU-limited worker serializing an online metric event every ten steps.
+    "log_every_steps": merge(tinteger, default(100)),
 }
 
 schema = {
