@@ -1,6 +1,7 @@
 import os
 import json
 import random
+import sys
 import time
 import uuid
 
@@ -162,7 +163,14 @@ def train(model, args):
         **args.training.task_kwargs,
     )
     sample_device = device if args.training.data_device == "model" else torch.device("cpu")
-    pbar = tqdm(range(starting_step, args.training.train_steps))
+    # A redirected progress bar emits one carriage-return update per step.
+    # For long background jobs this creates tens of gigabytes of log traffic
+    # without adding information: checkpoints and W&B retain the actual
+    # metrics. Keep the bar for an interactive terminal only.
+    pbar = tqdm(
+        range(starting_step, args.training.train_steps),
+        disable=not sys.stderr.isatty(),
+    )
 
     num_training_examples = args.training.num_training_examples
 
